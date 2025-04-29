@@ -113,57 +113,17 @@ def save_frame(name, frame):
             print(f"[ERROR] Не удалось сохранить изображение в: {filepath}")
 
 
-def save_frame1(name, frame):
-    global last_saved_time
-    current_time = time.time()
-
-    if current_time - last_saved_time >= SAVE_DELAY:
-        timestamp = time.strftime("%Y%m%d_%H%M%S")  # Текущее время как часть имени файла
-        filename = f"{name}_{timestamp}.jpg"
-        filepath = os.path.join(TEMP_PATH, filename)
-
-        # Печать пути для отладки
-        print(f"[INFO] Сохранение изображения в: {filepath}")
-
-        # Пытаемся сохранить изображение
-        save_result = cv2.imwrite(filepath, frame)
-
-        # Проверяем, удалось ли сохранить изображение
-        if save_result:
-            print(f"[INFO] Сохранено изображение: {filepath}")
-            last_saved_time = current_time  # Обновляем время последнего сохранения
-
-            try:
-                # create drive api client
-                service = build("drive", "v3", credentials=creds)
-
-                file_metadata = {"name": filepath}
-                media = MediaFileUpload(filepath, mimetype="image/jpeg")
-                # pylint: disable=maybe-no-member
-                file = (
-                    service.files()
-                    .create(body=file_metadata, media_body=media, fields="id")
-                    .execute()
-                )
-                print(f'Изображение отправлено на сервер. File ID: {file.get("id")}')
-
-            except HttpError as error:
-                print(f"An error occurred: {error}")
-                file = None
-
-        else:
-            print(f"[ERROR] Не удалось сохранить изображение в: {filepath}")
-
 
 def show(frame, face_locations, face_names):
     for (top, right, bottom, left), name in zip(face_locations, face_names):
-        if name != UNKNOWN_NAME:
-            save_frame(name, frame)
         color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 0, 255)
         cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
         cv2.rectangle(frame, (left, bottom - 30), (right, bottom), color, cv2.FILLED)
         cv2.putText(frame, name, (left + 5, bottom - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
+    for (_, _, _, _), name in zip(face_locations, face_names):
+        if name != UNKNOWN_NAME:
+            save_frame(name, frame)
     cv2.imshow(WINDOW_NAME, frame)
 
 

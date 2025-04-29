@@ -8,9 +8,32 @@ import numpy as np
 
 KNOWN_FACES_FILE = "known_faces.pkl"
 UNKNOWN_NAME = "unknown"
-MAX_DISTANCE = 0.6
+MAX_DISTANCE = 0.5
 # MIN_MATCH_FOR_PERSON = 0.3
 FRAME_SKIP = 3
+CAM_PORT = 0
+WINDOW_NAME = "Face Recognition"
+
+
+# Инициализация MediaPipe
+mp_face_detection = mp.solutions.face_detection
+mp_drawing = mp.solutions.drawing_utils
+
+face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.7)
+print("Starting video")
+cap = cv2.VideoCapture(CAM_PORT)
+print("Video started")
+frame_count = 0
+cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+
+# Загрузка базы известных лиц
+if os.path.exists(KNOWN_FACES_FILE):
+    with open(KNOWN_FACES_FILE, "rb") as f:
+        known_face_encodings, known_face_names = pickle.load(f)
+else:
+    known_face_encodings = []
+    known_face_names = []
+
 
 def show(frame, face_locations, face_names):
     for (top, right, bottom, left), name in zip(face_locations, face_names):
@@ -19,7 +42,7 @@ def show(frame, face_locations, face_names):
         cv2.rectangle(frame, (left, bottom - 30), (right, bottom), color, cv2.FILLED)
         cv2.putText(frame, name, (left + 5, bottom - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
-    cv2.imshow("Распознавание лиц", frame)
+    cv2.imshow(WINDOW_NAME, frame)
 
 def recognition(face_encoding):
     mx = [0, 0]
@@ -57,7 +80,7 @@ def get_locations(frame, results):
 def process(max_faces = 10):
     ret, frame = cap.read()
     if not ret:
-        return []
+        exit(6)
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = face_detector.process(rgb_frame)
 
@@ -87,28 +110,19 @@ def save_data():
     with open(KNOWN_FACES_FILE, "wb") as f:
         pickle.dump((known_face_encodings, known_face_names), f)
 
-# Загрузка базы известных лиц
-if os.path.exists(KNOWN_FACES_FILE):
-    with open(KNOWN_FACES_FILE, "rb") as f:
-        known_face_encodings, known_face_names = pickle.load(f)
-else:
-    known_face_encodings = []
-    known_face_names = []
-
-# Инициализация MediaPipe
-mp_face_detection = mp.solutions.face_detection
-mp_drawing = mp.solutions.drawing_utils
-
-face_detector = mp_face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.7)
-
-cap = cv2.VideoCapture(2)
-
-frame_count = 0
 
 print("[INFO] Нажмите 'U' чтобы сохранить лицо или обновить имеющееся, 'D' чтобы удалить лицо, 'Q' чтобы выйти.")
 while True:
-    if frame_count % FRAME_SKIP != 0:
-        continue
+    # ret, frame = cap.read()
+    # if not ret:
+    #     exit(6)
+    # cv2.imshow("Распознавание лиц", frame)
+    # key = cv2.waitKey(1)
+    # if key == ord('q'):
+    #     break
+    # continue
+   # if frame_count % FRAME_SKIP != 0:
+      #  continue
     face_encodings = process()
     key = cv2.waitKey(1)
 
@@ -122,8 +136,8 @@ while True:
         print("Теперь сохраните несколько кадров(клавиша 'S'), а потом выйдите(клавиша 'F'), так же вы можете удалить предыдущий кадр(клавиша 'R')")
         key = cv2.waitKey(1)
         while key != ord('f'):
-            if frame_count % FRAME_SKIP != 0:
-                continue
+       #     if frame_count % FRAME_SKIP != 0:
+      #          continue
             face_encodings = process(1)
             if key == ord('s'):
                 if face_encodings:

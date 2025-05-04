@@ -19,14 +19,15 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from mediapipe.tasks import python
 
-KNOWN_FACES_FILE = "known_faces.pkl"
+KNOWN_FACES_FILE = "../known_faces.pkl"
 UNKNOWN_NAME = "unknown"
 MAX_DISTANCE = 0.54
 # MIN_MATCH_FOR_PERSON = 0.3
 FRAME_SKIP = 3
 CAM_PORT = 0
 WINDOW_NAME = "Face Recognition"
-TEMP_PATH = "tmp"
+TEMP_PATH = "../tmp"
+os.makedirs(TEMP_PATH, exist_ok=True)
 
 last_saved_time = 0
 SAVE_DELAY = 7
@@ -37,7 +38,7 @@ SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 
 # Инициализация MediaPipe
-base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite', delegate=python.BaseOptions.Delegate.GPU)
+base_options = python.BaseOptions(model_asset_path='../blaze_face_short_range.tflite', delegate=python.BaseOptions.Delegate.GPU)
 face_detector_options = vision.FaceDetectorOptions(base_options=base_options)
 face_detector = vision.FaceDetector.create_from_options(face_detector_options)
 
@@ -69,19 +70,19 @@ creds = None
 # The file token.json stores the user's access and refresh tokens, and is
 # created automatically when the authorization flow completes for the first
 # time.
-if os.path.exists("token.json"):
-    creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+if os.path.exists("../token.json"):
+    creds = Credentials.from_authorized_user_file("../token.json", SCOPES)
 # If there are no (valid) credentials available, let the user log in.
 if not creds or not creds.valid:
     if creds and creds.expired and creds.refresh_token:
         creds.refresh(Request())
     else:
         flow = InstalledAppFlow.from_client_secrets_file(
-            "credentials.json", SCOPES
+            "../credentials.json", SCOPES
         )
         creds = flow.run_local_server(port=0)
     # Save the credentials for the next run
-    with open("token.json", "w") as token:
+    with open("../token.json", "w") as token:
         token.write(creds.to_json())
 
 
@@ -203,6 +204,7 @@ def recognition(face_encoding):
 
 
 def get_locations(frame, results):
+    # return face_recognition.face_locations(frame)
     face_locations = []
     if results.detections:
         h, w, _ = frame.shape

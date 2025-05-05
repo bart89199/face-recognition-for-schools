@@ -22,6 +22,10 @@ import mediapipe as mp
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
+# Global variable
+last_blink_time = 0  # store timestamp of last blink
+BLINK_DISPLAY_DURATION = 3  # seconds to keep "People Allowed" on screen
+
 CAM_PORT = '/dev/video0'
 
 KNOWN_FACES_FILE = "known_faces.pkl"
@@ -76,25 +80,39 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
     return ear
 
 
-def check_eyes(frame, rgb_frame):
-    global blink_counter
+# Global dictionary to store blink counters for each face
+face_blink_states = {}  # {face_index: {'counter': int, 'blinked': bool}}
+
+def check_eyes_all_faces(frame, rgb_frame):
     results_mesh = face_mesh.process(rgb_frame)
     h, w, _ = frame.shape
-    blinked = False
+    blink_results = []
 
     if results_mesh.multi_face_landmarks:
-        landmarks = results_mesh.multi_face_landmarks[0].landmark
-        left_ear = eye_aspect_ratio(landmarks, LEFT_EYE, w, h)
-        right_ear = eye_aspect_ratio(landmarks, RIGHT_EYE, w, h)
-        avg_ear = (left_ear + right_ear) / 2.0
+        for i, face_landmarks in enumerate(results_mesh.multi_face_landmarks):
+            landmarks = face_landmarks.landmark
 
-        if avg_ear < EAR_THRESHOLD:
-            blink_counter += 1
-        else:
-            if blink_counter >= CONSEC_FRAMES:
-                blinked = True
-            blink_counter = 0
-    return blinked
+            left_ear = eye_aspect_ratio(landmarks, LEFT_EYE, w, h)
+            right_ear = eye_aspect_ratio(landmarks, RIGHT_EYE, w, h)
+            avg_ear = (left_ear + right_ear) / 2.0
+
+            # Init state if not exists
+            if i not in face_blink_states:
+                face_blink_states[i] = {'counter': 0, 'blinked': False}
+
+            state = face_blink_states[i]
+            blinked = False
+
+            if avg_ear < EAR_THRESHOLD:
+                state['counter'] += 1
+            else:
+                if state['counter'] >= CONSEC_FRAMES:
+                    blinked = True
+                state['counter'] = 0
+
+            state['blinked'] = blinked
+            blink_results.append(blinked)
+    return blink_results
 
 
 def get_locations(frame):
@@ -214,31 +232,47 @@ def recognition(face_encoding):
         return check_encoding_percent(face_encoding)
 
 
+import time
+
+# Global or external variable to track message and its display time
+last_message_time = 0
+current_message = ""
+
 def process(cap):
+    global last_blink_time
     ret, frame = cap.read()
     if not ret:
         exit(6)
+
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
     face_locations = get_locations(frame)
-    face_names = []
-
     face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model="cnn")
 
-    for face_encoding in face_encodings:
-        name = recognition(face_encoding)
+    face_names = []
+    blinked_list = check_eyes_all_faces(frame, rgb_frame)
+
+    for i, face_encoding in enumerate(face_encodings):
+        name = recognition(face_encoding)  # returns known name or "unknown"
+        blinked = blinked_list[i] if i < len(blinked_list) else False
+
+        if name.lower() != UNKNOWN_NAME and blinked:
+            last_blink_time = time.time()
+            name += " [blinked]"
+
         face_names.append(name)
 
-    if not check_eyes(frame, rgb_frame):
-        cv2.putText(frame, "People not detected", (20, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 1)
+    # Status display
+    if time.time() - last_blink_time < BLINK_DISPLAY_DURATION:
+        cv2.putText(frame, "People Allowed", (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     else:
-        cv2.putText(frame, "People detected", (20, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 1)
+        cv2.putText(frame, "People Not Detected", (20, 40),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
     show(frame, face_locations, face_names)
-
     return face_encodings
+
 
 def show(frame, face_locations, face_names):
     for (top, right, bottom, left), name in zip(face_locations, face_names):

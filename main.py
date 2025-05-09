@@ -1,5 +1,6 @@
 import pickle
 import threading
+from time import sleep
 
 import cv2
 
@@ -8,6 +9,7 @@ import time
 
 import cv2
 import face_recognition
+import numpy
 import numpy as np
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -21,6 +23,7 @@ import mediapipe as mp
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
+from numpy import asarray
 
 # Global variable
 last_blink_time = 0  # store timestamp of last blink
@@ -32,38 +35,76 @@ KNOWN_FACES_FILE = "known_faces.pkl"
 UNKNOWN_NAME = "unknown"
 WINDOW_NAME = "Face Recognition"
 
-MAX_AVG_DISTANCE = 0.54
+# pixels scale
+FRAME_SCALE_TOP = 27
+FRAME_SCALE_LEFT = 7
+FRAME_SCALE_BOTTOM = 12
+FRAME_SCALE_RIGHT = 7
 
-MAX_PERCENT_DISTANCE = 0.6
-MIN_MATCH_FOR_PERSON = 0.3
+MAX_FACES = 6
+
+LAST_FRAMES_AMOUNT = 25
+
+# Be careful, it mustn't be bigger than LAST_FRAMES_AMOUNT
+MIN_FRAMES_FOR_DETECTION = 12
 
 # 1 - check avg distance
 # 2 - check encodings coincidence percent
 FACE_DETECTION_MODE = 2
 
-# Параметры для моргания
-EAR_THRESHOLD = 0.2
-CONSEC_FRAMES = 2
-blink_counter = 0
+# For avg distance
+MAX_AVG_DISTANCE = 0.54
 
-# Точки глаз в face_mesh (правый и левый глаз)
-RIGHT_EYE = [33, 160, 158, 133, 153, 144]
-LEFT_EYE = [362, 385, 387, 263, 373, 380]
+# For encodings coincidence percent
+MAX_PERCENT_DISTANCE = 0.6
+MIN_MATCH_FOR_PERSON = 0.3
+
+known_face_encodings = []
+known_face_names = []
+
+# -------SAVING--------
 
 TEMP_PATH = "tmp"
 last_saved_time = 0
-SAVE_DELAY = 7
+SAVE_DELAY = 5
 GOOGLE_DRIVE_FOLDER_ID = "1i-DoUmzkX9USiMLOOCeXjog52rma7RPW"
 SAVE_DETECTION_STATUS = False
 
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 creds = None
 
-known_face_encodings = []
-known_face_names = []
+# -------EYES-----------
+MIN_EYES_DIFFERENCE = 0.15
+MIN_DIFS_FOR_BLICK = 0.3
 
-face_mesh = None
-face_detector = None
+NEED_BLINKS = 2
+
+BLINKED_EYES_OPEN = False
+
+# MAX VALUE FOR CLOSED EYE
+CLOSE_EYES_THRESHOLD = 0.2
+
+# top, left, right, bottom faces frame scale for eyes owner finding
+FRAME_FOR_EYES_SCALE = 0.5
+
+# Eyes points for mediapipe
+RIGHT_EYE = [33, 160, 158, 133, 153, 144]
+LEFT_EYE = [362, 385, 387, 263, 373, 380]
+
+FRAMES_FOR_EYES_CHECK = 9
+
+eyes = [{}] * LAST_FRAMES_AMOUNT
+raw_eyes = []
+eyes_ready = False
+
+iteration = 0
+
+BaseOptions = mp.tasks.BaseOptions
+FaceLandmarker = mp.tasks.vision.FaceLandmarker
+FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
+VisionRunningMode = mp.tasks.vision.RunningMode
+
 
 def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
     def _point(index):  # Перевод нормализованных координат в пиксели
@@ -77,62 +118,50 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
     # Горизонтальное расстояние
     c = np.linalg.norm(np.array(p1) - np.array(p4))
     ear = (a + b) / (2.0 * c)
+
     return ear
 
 
-# Global dictionary to store blink counters for each face
-face_blink_states = {}  # {face_index: {'counter': int, 'blinked': bool}}
+def process_eyes(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
+    h, w = output_image.height, output_image.width
 
-def check_eyes_all_faces(frame, rgb_frame):
-    results_mesh = face_mesh.process(rgb_frame)
-    h, w, _ = frame.shape
-    blink_results = []
+    global raw_eyes
+    global eyes_ready
+    for landmarks in result.face_landmarks:
+        left_eye = eye_aspect_ratio(landmarks, LEFT_EYE, w, h)
+        right_eye = eye_aspect_ratio(landmarks, RIGHT_EYE, w, h)
+        avg_ear = (left_eye + right_eye) / 2.0
 
-    if results_mesh.multi_face_landmarks:
-        for i, face_landmarks in enumerate(results_mesh.multi_face_landmarks):
-            landmarks = face_landmarks.landmark
+        pos_x = 0
+        pos_y = 0
+        for p in landmarks:
+            pos_x += p.x * w
+            pos_y += p.y * h
 
-            left_ear = eye_aspect_ratio(landmarks, LEFT_EYE, w, h)
-            right_ear = eye_aspect_ratio(landmarks, RIGHT_EYE, w, h)
-            avg_ear = (left_ear + right_ear) / 2.0
+        pos_x /= len(landmarks)
+        pos_y /= len(landmarks)
 
-            # Init state if not exists
-            if i not in face_blink_states:
-                face_blink_states[i] = {'counter': 0, 'blinked': False}
-
-            state = face_blink_states[i]
-            blinked = False
-
-            if avg_ear < EAR_THRESHOLD:
-                state['counter'] += 1
-            else:
-                if state['counter'] >= CONSEC_FRAMES:
-                    blinked = True
-                state['counter'] = 0
-
-            state['blinked'] = blinked
-            blink_results.append(blinked)
-    return blink_results
+        raw_eyes.append((pos_x, pos_y, avg_ear))
+    eyes_ready = True
 
 
-def get_locations(frame):
-    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+def get_locations(frame, image):
     results = face_detector.detect(image=image)
     face_locations = []
     if results.detections:
         h, w, _ = frame.shape
         for detection in results.detections:
-            # box = detection.bounding_box
-            # top = int(box.origin_y)
-            # left = int(box.xmin * w)
-            # bottom = top + int(box.height * h)
-            # right = left + int(box.width * w)
 
             bbox = detection.bounding_box
             left = bbox.origin_x
             top = bbox.origin_y
             right = bbox.origin_x + bbox.width
             bottom = bbox.origin_y + bbox.height
+
+            top -= FRAME_SCALE_TOP
+            left -= FRAME_SCALE_LEFT
+            bottom += FRAME_SCALE_BOTTOM
+            right += FRAME_SCALE_RIGHT
 
             top = max(top, 0)
             left = max(left, 0)
@@ -187,8 +216,6 @@ def save_frame(name, frame):
             print(f"[ERROR] Не удалось сохранить изображение в: {filepath}")
 
 
-
-
 def check_encoding_avg(face_encoding):
     mx = [0, 0]
     for idx, known_faces in enumerate(known_face_encodings):
@@ -196,7 +223,7 @@ def check_encoding_avg(face_encoding):
             continue
         distances = face_recognition.face_distance(known_faces, face_encoding)
         avg = np.mean(distances)
-        if avg <= MAX_AVG_DISTANCE and mx[0] < avg:
+        if MAX_AVG_DISTANCE >= avg > mx[0]:
             mx = [avg, idx]
     name = UNKNOWN_NAME
     best_match_index = mx[1]
@@ -232,60 +259,130 @@ def recognition(face_encoding):
         return check_encoding_percent(face_encoding)
 
 
-import time
+def analyze_eyes(face_names, face_locations):
+    for x, y, avg in raw_eyes:
+        for idx, (top, left, bottom, right) in enumerate(face_locations):
+            if face_names[idx] == UNKNOWN_NAME:
+                continue
+            mid_x = (right + left) // 2
+            mid_y = (top + bottom) // 2
+            h = bottom - top
+            w = left - right
+            h = h * FRAME_FOR_EYES_SCALE
+            w = w * FRAME_FOR_EYES_SCALE
+            top = mid_y - h // 2
+            bottom = mid_y + h // 2
+            left = mid_x - w // 2
+            right = mid_x + w // 2
+            if top < y < bottom and left < x < right:
+                eyes[0][face_names[idx]] = (avg, 0)
 
-# Global or external variable to track message and its display time
-last_message_time = 0
-current_message = ""
+
+def check_face(name):
+    if not eyes[0].__contains__(name):
+        return False, False, False
+    avg, _ = eyes[0][name]
+    difs = 0
+    cnt = 0
+    blinks = 0
+    detect_cnt = 0
+    for i in range(1, LAST_FRAMES_AMOUNT):
+        if not eyes[i].__contains__(name):
+            break
+        detect_cnt += 1
+
+    for i in range(1, FRAMES_FOR_EYES_CHECK):
+        if not eyes[i].__contains__(name):
+            break
+        cnt += 1
+        avgd, bls = eyes[i][name]
+        blinks += bls
+        dif = abs(avg - avgd)
+        if dif >= MIN_EYES_DIFFERENCE:
+            difs += 1
+    blinked = cnt > 0 and (difs / cnt) > MIN_DIFS_FOR_BLICK
+    blinks += blinked
+    eyes[0][name] = (avg, blinked)
+    return detect_cnt >= MIN_FRAMES_FOR_DETECTION, blinks >= NEED_BLINKS, avg <= CLOSE_EYES_THRESHOLD
+
+
+def clear():
+    global eyes
+    global eyes_ready
+    global raw_eyes
+    eyes = [{}] + eyes[:-1]
+    eyes_ready = False
+    raw_eyes = []
+
 
 def process(cap):
     global last_blink_time
     ret, frame = cap.read()
     if not ret:
         exit(6)
-
+    global iteration
+    iteration += 1
+    clear()
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-    face_locations = get_locations(frame)
-    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model="cnn")
+    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+    cur = int(time.time() * 1000)
+    landmarker.detect_async(image, cur)
+
+    face_locations = get_locations(frame, image)
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model="large")
 
     face_names = []
-    blinked_list = check_eyes_all_faces(frame, rgb_frame)
 
     for i, face_encoding in enumerate(face_encodings):
-        name = recognition(face_encoding)  # returns known name or "unknown"
-        blinked = blinked_list[i] if i < len(blinked_list) else False
-
-        if name.lower() != UNKNOWN_NAME and blinked:
-            last_blink_time = time.time()
-            name += " [blinked]"
+        name = recognition(face_encoding)
 
         face_names.append(name)
 
-    # Status display
+    while not eyes_ready:
+        sleep(0.010)
+
+    analyze_eyes(face_names, face_locations)
+
+    alive_names = process_ready_faces(frame, face_locations, face_names)
+
+    if len(alive_names) > 0:
+        last_blink_time = time.time()
     if time.time() - last_blink_time < BLINK_DISPLAY_DURATION:
         cv2.putText(frame, "People Allowed", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     else:
         cv2.putText(frame, "People Not Detected", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-
-    show(frame, face_locations, face_names)
+    cv2.imshow(WINDOW_NAME, frame)
     return face_encodings
 
 
-def show(frame, face_locations, face_names):
+def process_ready_faces(frame, face_locations, face_names):
+    alive_names = []
     for (top, right, bottom, left), name in zip(face_locations, face_names):
-        color = (0, 255, 0) if name != UNKNOWN_NAME else (0, 0, 255)
+        color = (0, 0, 255)
+        recogn, alive, blinked = check_face(name)
+        if recogn:
+            color = (230, 224, 76)
+            if alive:
+                color = (0, 255, 0)
+            if blinked:
+                color = (255, 33, 170)
+            if alive and (not blinked or BLINKED_EYES_OPEN):
+                alive_names.append(name)
+        else:
+            if name != UNKNOWN_NAME:
+                color = (80, 127, 255)
         cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
         cv2.rectangle(frame, (left, bottom - 30), (right, bottom), color, cv2.FILLED)
         cv2.putText(frame, name, (left + 5, bottom - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
-    for (_, _, _, _), name in zip(face_locations, face_names):
-        if name != UNKNOWN_NAME:
-            th = threading.Thread(target=save_frame, args=(name, frame))
-            th.start()
-    cv2.imshow(WINDOW_NAME, frame)
+    for name in alive_names:
+        th = threading.Thread(target=save_frame, args=(name, frame))
+        th.start()
+    return alive_names
+
 
 def save(face_encoding, name):
     if name not in known_face_names:
@@ -299,7 +396,6 @@ def save(face_encoding, name):
 def save_data():
     with open(KNOWN_FACES_FILE, "wb") as f:
         pickle.dump((known_face_encodings, known_face_names), f)
-
 
 
 def main():
@@ -331,15 +427,20 @@ def main():
     global face_mesh
     face_detector = vision.FaceDetector.create_from_options(face_detector_options)
 
-    mp_face_mesh = mp.solutions.face_mesh
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path='face_landmarker.task', delegate=python.BaseOptions.Delegate.GPU),
+        running_mode=VisionRunningMode.LIVE_STREAM,
+        num_faces=10,
+        result_callback=process_eyes)
+    global landmarker
+    landmarker = FaceLandmarker.create_from_options(options)
 
-    face_mesh = mp_face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1, refine_landmarks=True)
+    global known_face_encodings
+    global known_face_names
 
     # Загрузка базы известных лиц
     if os.path.exists(KNOWN_FACES_FILE):
         with open(KNOWN_FACES_FILE, "rb") as f:
-            global known_face_encodings
-            global known_face_names
             known_face_encodings, known_face_names = pickle.load(f)
 
     print("Starting video")

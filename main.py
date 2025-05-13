@@ -29,7 +29,7 @@ from numpy import asarray
 last_blink_time = 0  # store timestamp of last blink
 BLINK_DISPLAY_DURATION = 3  # seconds to keep "People Allowed" on screen
 
-CAM_PORT = '/dev/video0'
+CAM_PORT = '/dev/video2'
 
 KNOWN_FACES_FILE = "known_faces.pkl"
 UNKNOWN_NAME = "unknown"
@@ -65,7 +65,7 @@ known_face_names = []
 # -------SAVING--------
 
 TEMP_PATH = "tmp"
-last_saved_time = 0
+last_saved_time = {}
 SAVE_DELAY = 5
 GOOGLE_DRIVE_FOLDER_ID = "1i-DoUmzkX9USiMLOOCeXjog52rma7RPW"
 SAVE_DETECTION_STATUS = False
@@ -96,6 +96,8 @@ FRAMES_FOR_EYES_CHECK = 9
 eyes = [{}] * LAST_FRAMES_AMOUNT
 raw_eyes = []
 eyes_ready = False
+
+last_frame_time = 0
 
 iteration = 0
 
@@ -178,7 +180,7 @@ def save_frame(name, frame):
     global last_saved_time
     current_time = time.time()
 
-    if current_time - last_saved_time >= SAVE_DELAY:
+    if not last_saved_time.__contains__(name) or current_time - last_saved_time[name] >= SAVE_DELAY:
         timestamp = time.strftime("%Y%m%d_%H%M%S")  # Текущее время как часть имени файла
         filename = f"{name}_{timestamp}.jpg"
         filepath = os.path.join(TEMP_PATH, filename)
@@ -192,7 +194,7 @@ def save_frame(name, frame):
         # Проверяем, удалось ли сохранить изображение
         if save_result:
             print(f"[INFO] Сохранено изображение: {filepath}")
-            last_saved_time = current_time  # Обновляем время последнего сохранения
+            last_saved_time[name] = current_time  # Обновляем время последнего сохранения
 
             try:
                 # create drive api client
@@ -354,16 +356,25 @@ def process(cap):
     else:
         cv2.putText(frame, "People Not Detected", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+
+    cur_time = time.time()
+    global last_frame_time
+    fps = 1 / (cur_time - last_frame_time)
+    cv2.putText(frame, "fps: " + str(int(fps)), (500, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+    last_frame_time = cur_time
     cv2.imshow(WINDOW_NAME, frame)
     return face_encodings
 
 
 def process_ready_faces(frame, face_locations, face_names):
     alive_names = []
+    save = False
     for (top, right, bottom, left), name in zip(face_locations, face_names):
         color = (0, 0, 255)
         recogn, alive, blinked = check_face(name)
         if recogn:
+            save = True
             color = (230, 224, 76)
             if alive:
                 color = (0, 255, 0)
@@ -380,6 +391,9 @@ def process_ready_faces(frame, face_locations, face_names):
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
     for name in alive_names:
         th = threading.Thread(target=save_frame, args=(name, frame))
+        th.start()
+    if save:
+        th = threading.Thread(target=save_frame, args=("recogn", frame))
         th.start()
     return alive_names
 

@@ -7,10 +7,12 @@ import cv2
 import os
 import time
 
+import uuid
 import cv2
 import face_recognition
 import numpy
 import numpy as np
+import serial
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -23,89 +25,15 @@ import mediapipe as mp
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from numpy import asarray
+import global_vars
 
-# Global variable
-last_blink_time = 0  # store timestamp of last blink
-BLINK_DISPLAY_DURATION = 3  # seconds to keep "People Allowed" on screen
-
-CAM_PORT = '/dev/video2'
-
-KNOWN_FACES_FILE = "known_faces.pkl"
-UNKNOWN_NAME = "unknown"
-WINDOW_NAME = "Face Recognition"
-
-# pixels scale
-FRAME_SCALE_TOP = 27
-FRAME_SCALE_LEFT = 7
-FRAME_SCALE_BOTTOM = 12
-FRAME_SCALE_RIGHT = 7
-
-MAX_FACES = 6
-
-LAST_FRAMES_AMOUNT = 25
-
-# Be careful, it mustn't be bigger than LAST_FRAMES_AMOUNT
-MIN_FRAMES_FOR_DETECTION = 12
-
-# 1 - check avg distance
-# 2 - check encodings coincidence percent
-FACE_DETECTION_MODE = 2
-
-# For avg distance
-MAX_AVG_DISTANCE = 0.54
-
-# For encodings coincidence percent
-MAX_PERCENT_DISTANCE = 0.6
-MIN_MATCH_FOR_PERSON = 0.3
-
-known_face_encodings = []
-known_face_names = []
-
-# -------SAVING--------
-
-TEMP_PATH = "tmp"
-last_saved_time = {}
-SAVE_DELAY = 5
-GOOGLE_DRIVE_FOLDER_ID = "1i-DoUmzkX9USiMLOOCeXjog52rma7RPW"
-SAVE_DETECTION_STATUS = False
-
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
-creds = None
-
-# -------EYES-----------
-MIN_EYES_DIFFERENCE = 0.15
-MIN_DIFS_FOR_BLICK = 0.3
-
-NEED_BLINKS = 2
-
-BLINKED_EYES_OPEN = False
-
-# MAX VALUE FOR CLOSED EYE
-CLOSE_EYES_THRESHOLD = 0.2
-
-# top, left, right, bottom faces frame scale for eyes owner finding
-FRAME_FOR_EYES_SCALE = 0.5
-
-# Eyes points for mediapipe
-RIGHT_EYE = [33, 160, 158, 133, 153, 144]
-LEFT_EYE = [362, 385, 387, 263, 373, 380]
-
-FRAMES_FOR_EYES_CHECK = 9
-
-eyes = [{}] * LAST_FRAMES_AMOUNT
-raw_eyes = []
-eyes_ready = False
-
-last_frame_time = 0
-
-iteration = 0
 
 BaseOptions = mp.tasks.BaseOptions
 FaceLandmarker = mp.tasks.vision.FaceLandmarker
 FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
 FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
 VisionRunningMode = mp.tasks.vision.RunningMode
+
 
 
 def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
@@ -127,11 +55,9 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
 def process_eyes(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int):
     h, w = output_image.height, output_image.width
 
-    global raw_eyes
-    global eyes_ready
     for landmarks in result.face_landmarks:
-        left_eye = eye_aspect_ratio(landmarks, LEFT_EYE, w, h)
-        right_eye = eye_aspect_ratio(landmarks, RIGHT_EYE, w, h)
+        left_eye = eye_aspect_ratio(landmarks, global_vars.LEFT_EYE, w, h)
+        right_eye = eye_aspect_ratio(landmarks, global_vars.RIGHT_EYE, w, h)
         avg_ear = (left_eye + right_eye) / 2.0
 
         pos_x = 0
@@ -143,8 +69,8 @@ def process_eyes(result: FaceLandmarkerResult, output_image: mp.Image, timestamp
         pos_x /= len(landmarks)
         pos_y /= len(landmarks)
 
-        raw_eyes.append((pos_x, pos_y, avg_ear))
-    eyes_ready = True
+        global_vars.raw_eyes.append((pos_x, pos_y, avg_ear))
+    global_vars.eyes_ready = True
 
 
 def get_locations(frame, image):
@@ -160,10 +86,10 @@ def get_locations(frame, image):
             right = bbox.origin_x + bbox.width
             bottom = bbox.origin_y + bbox.height
 
-            top -= FRAME_SCALE_TOP
-            left -= FRAME_SCALE_LEFT
-            bottom += FRAME_SCALE_BOTTOM
-            right += FRAME_SCALE_RIGHT
+            top -= global_vars.FRAME_SCALE_TOP
+            left -= global_vars.FRAME_SCALE_LEFT
+            bottom += global_vars.FRAME_SCALE_BOTTOM
+            right += global_vars.FRAME_SCALE_RIGHT
 
             top = max(top, 0)
             left = max(left, 0)
@@ -173,34 +99,37 @@ def get_locations(frame, image):
             face_locations.append((top, right, bottom, left))
     return face_locations
 
+def save_frame(frame, filepath: str):
+    save_result = cv2.imwrite(filepath, frame)
+    return save_result
 
-def save_frame(name, frame):
-    if not SAVE_DETECTION_STATUS:
+def save_recognition(name, frame):
+    if not global_vars.SAVE_DETECTION_STATUS:
         return
-    global last_saved_time
     current_time = time.time()
 
-    if not last_saved_time.__contains__(name) or current_time - last_saved_time[name] >= SAVE_DELAY:
+    if not global_vars.last_saved_time.__contains__(name) or current_time - global_vars.last_saved_time[name] >= global_vars.SAVE_DELAY:
         timestamp = time.strftime("%Y%m%d_%H%M%S")  # Текущее время как часть имени файла
         filename = f"{name}_{timestamp}.jpg"
-        filepath = os.path.join(TEMP_PATH, filename)
+
 
         # Печать пути для отладки
-        print(f"[INFO] Сохранение изображения в: {filepath}")
+        print(f"[INFO] Сохранение изображения {filename}")
 
-        # Пытаемся сохранить изображение
-        save_result = cv2.imwrite(filepath, frame)
+        filepath = os.path.join(global_vars.TEMP_PATH, filename)
+
+        save_result = save_frame(frame, filepath)
 
         # Проверяем, удалось ли сохранить изображение
         if save_result:
-            print(f"[INFO] Сохранено изображение: {filepath}")
-            last_saved_time[name] = current_time  # Обновляем время последнего сохранения
+            print(f"[INFO] Сохранено изображение {filename}")
+            global_vars.last_saved_time[name] = current_time  # Обновляем время последнего сохранения
 
             try:
                 # create drive api client
                 service = build("drive", "v3", credentials=creds)
 
-                file_metadata = {"name": filename, "parents": [GOOGLE_DRIVE_FOLDER_ID]}
+                file_metadata = {"name": filename, "parents": [global_vars.GOOGLE_DRIVE_FOLDER_ID]}
                 media = MediaFileUpload(filepath, mimetype="image/jpeg")
                 # pylint: disable=maybe-no-member
                 file = (
@@ -215,115 +144,110 @@ def save_frame(name, frame):
                 file = None
 
         else:
-            print(f"[ERROR] Не удалось сохранить изображение в: {filepath}")
+            print(f"[ERROR] Не удалось сохранить изображение в {filename}")
 
 
 def check_encoding_avg(face_encoding):
     mx = [0, 0]
-    for idx, known_faces in enumerate(known_face_encodings):
+    for idx, known_faces in enumerate(global_vars.known_face_encodings):
         if len(known_faces) == 0:
             continue
         distances = face_recognition.face_distance(known_faces, face_encoding)
         avg = np.mean(distances)
-        if MAX_AVG_DISTANCE >= avg > mx[0]:
+        if global_vars.MAX_AVG_DISTANCE >= avg > mx[0]:
             mx = [avg, idx]
-    name = UNKNOWN_NAME
+    name = global_vars.UNKNOWN_NAME
     best_match_index = mx[1]
     if mx[0] != 0:
-        name = known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
+        name = global_vars.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
     return name
 
 
 def check_encoding_percent(face_encoding):
     mx = [0, 0]
-    for idx, known_faces in enumerate(known_face_encodings):
+    for idx, known_faces in enumerate(global_vars.known_face_encodings):
         if len(known_faces) == 0:
             continue
         distances = face_recognition.face_distance(known_faces, face_encoding)
         cnt = 0
         for d in distances:
-            if d <= MAX_PERCENT_DISTANCE:
+            if d <= global_vars.MAX_PERCENT_DISTANCE:
                 cnt += 1
         percent = cnt / len(known_faces)
-        if mx[0] < percent:
+        if mx[0] < percent and percent >= global_vars.MIN_MATCH_FOR_PERSON:
             mx = [percent, idx]
-    name = UNKNOWN_NAME
+    name = global_vars.UNKNOWN_NAME
     best_match_index = mx[1]
     if mx[0] != 0:
-        name = known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
+        name = global_vars.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
     return name
 
 
 def recognition(face_encoding):
-    if FACE_DETECTION_MODE == 1:
+    if global_vars.FACE_DETECTION_MODE == 1:
         return check_encoding_avg(face_encoding)
     else:
         return check_encoding_percent(face_encoding)
 
 
 def analyze_eyes(face_names, face_locations):
-    for x, y, avg in raw_eyes:
+    for x, y, avg in global_vars.raw_eyes:
         for idx, (top, left, bottom, right) in enumerate(face_locations):
-            if face_names[idx] == UNKNOWN_NAME:
+            if face_names[idx] == global_vars.UNKNOWN_NAME:
                 continue
             mid_x = (right + left) // 2
             mid_y = (top + bottom) // 2
             h = bottom - top
             w = left - right
-            h = h * FRAME_FOR_EYES_SCALE
-            w = w * FRAME_FOR_EYES_SCALE
+            h = h * global_vars.FRAME_FOR_EYES_SCALE
+            w = w * global_vars.FRAME_FOR_EYES_SCALE
             top = mid_y - h // 2
             bottom = mid_y + h // 2
             left = mid_x - w // 2
             right = mid_x + w // 2
             if top < y < bottom and left < x < right:
-                eyes[0][face_names[idx]] = (avg, 0)
+                global_vars.eyes[0][face_names[idx]] = (avg, 0)
 
 
 def check_face(name):
-    if not eyes[0].__contains__(name):
+    if not global_vars.eyes[0].__contains__(name):
         return False, False, False
-    avg, _ = eyes[0][name]
+    avg, _ = global_vars.eyes[0][name]
     difs = 0
     cnt = 0
     blinks = 0
     detect_cnt = 0
-    for i in range(1, LAST_FRAMES_AMOUNT):
-        if not eyes[i].__contains__(name):
+    for i in range(1, global_vars.LAST_FRAMES_AMOUNT):
+        if not global_vars.eyes[i].__contains__(name):
             break
         detect_cnt += 1
 
-    for i in range(1, FRAMES_FOR_EYES_CHECK):
-        if not eyes[i].__contains__(name):
+    for i in range(1, global_vars.FRAMES_FOR_EYES_CHECK):
+        if not global_vars.eyes[i].__contains__(name):
             break
         cnt += 1
-        avgd, bls = eyes[i][name]
+        avgd, bls = global_vars.eyes[i][name]
         blinks += bls
         dif = abs(avg - avgd)
-        if dif >= MIN_EYES_DIFFERENCE:
+        if dif >= global_vars.MIN_EYES_DIFFERENCE:
             difs += 1
-    blinked = cnt > 0 and (difs / cnt) > MIN_DIFS_FOR_BLICK
+    blinked = cnt > 0 and (difs / cnt) > global_vars.MIN_DIFS_FOR_BLICK
     blinks += blinked
-    eyes[0][name] = (avg, blinked)
-    return detect_cnt >= MIN_FRAMES_FOR_DETECTION, blinks >= NEED_BLINKS, avg <= CLOSE_EYES_THRESHOLD
+    global_vars.eyes[0][name] = (avg, blinked)
+    return detect_cnt >= global_vars.MIN_FRAMES_FOR_DETECTION, blinks >= global_vars.NEED_BLINKS, avg <= global_vars.CLOSE_EYES_THRESHOLD
 
 
 def clear():
-    global eyes
-    global eyes_ready
-    global raw_eyes
-    eyes = [{}] + eyes[:-1]
-    eyes_ready = False
-    raw_eyes = []
+    global_vars.eyes = [{}] + global_vars.eyes[:-1]
+    global_vars.eyes_ready = False
+    global_vars.raw_eyes = []
 
 
-def process(cap):
-    global last_blink_time
-    ret, frame = cap.read()
-    if not ret:
-        exit(6)
-    global iteration
-    iteration += 1
+
+
+def process(frame):
+
+    global_vars.iteration += 1
     clear()
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
@@ -332,7 +256,7 @@ def process(cap):
     landmarker.detect_async(image, cur)
 
     face_locations = get_locations(frame, image)
-    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model="large")
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
 
     face_names = []
 
@@ -341,29 +265,31 @@ def process(cap):
 
         face_names.append(name)
 
-    while not eyes_ready:
+    while not global_vars.eyes_ready:
         sleep(0.010)
 
     analyze_eyes(face_names, face_locations)
 
     alive_names = process_ready_faces(frame, face_locations, face_names)
 
+
     if len(alive_names) > 0:
-        last_blink_time = time.time()
-    if time.time() - last_blink_time < BLINK_DISPLAY_DURATION:
+        global_vars.last_blink_time = time.time()
+    if time.time() - global_vars.last_blink_time < global_vars.CLOSE_DELAY:
+        open_door()
         cv2.putText(frame, "People Allowed", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     else:
+        close_door()
         cv2.putText(frame, "People Not Detected", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
     cur_time = time.time()
-    global last_frame_time
-    fps = 1 / (cur_time - last_frame_time)
+    fps = 1 / (cur_time - global_vars.last_frame_time)
     cv2.putText(frame, "fps: " + str(int(fps)), (500, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-    last_frame_time = cur_time
-    cv2.imshow(WINDOW_NAME, frame)
+    global_vars.last_frame_time = cur_time
+    cv2.imshow(global_vars.WINDOW_NAME, frame)
     return face_encodings
 
 
@@ -380,58 +306,80 @@ def process_ready_faces(frame, face_locations, face_names):
                 color = (0, 255, 0)
             if blinked:
                 color = (255, 33, 170)
-            if alive and (not blinked or BLINKED_EYES_OPEN):
+            if alive and (not blinked or global_vars.BLINKED_EYES_OPEN):
                 alive_names.append(name)
         else:
-            if name != UNKNOWN_NAME:
+            if name != global_vars.UNKNOWN_NAME:
                 color = (80, 127, 255)
         cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
         cv2.rectangle(frame, (left, bottom - 30), (right, bottom), color, cv2.FILLED)
         cv2.putText(frame, name, (left + 5, bottom - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
     for name in alive_names:
-        th = threading.Thread(target=save_frame, args=(name, frame))
+        th = threading.Thread(target=save_recognition, args=(name, frame))
         th.start()
     if save:
-        th = threading.Thread(target=save_frame, args=("recogn", frame))
+        th = threading.Thread(target=save_recognition, args=("recogn", frame))
         th.start()
     return alive_names
 
 
-def save(face_encoding, name):
-    if name not in known_face_names:
-        known_face_names.append(name)
-        known_face_encodings.append([face_encoding])
-    else:
-        index = known_face_names.index(name)
-        known_face_encodings[index].append(face_encoding)
+
+def open_door():
+    write_arduino(1)
+
+def close_door():
+    write_arduino(0)
+
+def write_arduino(x):
+    arduino.write(bytes(str(x), 'utf-8'))
+
+def save(face_encoding, name, frame):
+    filename = name + "-" + str(uuid.uuid4()) + ".jpg"
+    filepath = os.path.join(global_vars.SAVED_FRAMES_FOLDER, name)
+    savepath = os.path.join(filepath, filename)
+    save_result = save_frame(frame, savepath)
+    filepath = os.path.join(filepath, filename)
+    if not save_result:
+        print("Can't save frame to folder(name = " + name + ")")
+    if name not in global_vars.known_face_names:
+        global_vars.known_face_names.append(name)
+        global_vars.known_face_encodings.append([])
+        global_vars.known_face_images.append([])
+
+    index = global_vars.known_face_names.index(name)
+    global_vars.known_face_encodings[index].append(face_encoding)
+    global_vars.known_face_images[index].append(filepath)
 
 
 def save_data():
-    with open(KNOWN_FACES_FILE, "wb") as f:
-        pickle.dump((known_face_encodings, known_face_names), f)
+    with open(global_vars.KNOWN_FACES_FILE, "wb") as f:
+        pickle.dump((global_vars.known_face_encodings, global_vars.known_face_names, global_vars.known_face_images), f)
 
 
-def main():
-    os.makedirs(TEMP_PATH, exist_ok=True)
+
+def load_drive():
+    os.makedirs(global_vars.TEMP_PATH, exist_ok=True)
     # The file token.json stores the user's access and refresh tokens, and is
     # created automatically when the authorization flow completes for the first
     # time.
     global creds
     if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json", SCOPES)
+        creds = Credentials.from_authorized_user_file("token.json", global_vars.SCOPES)
     # If there are no (valid) credentials available, let the user log in.
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
-                "credentials.json", SCOPES
+                "credentials.json", global_vars.SCOPES
             )
             creds = flow.run_local_server(port=0)
         # Save the credentials for the next run
         with open("token.json", "w") as token:
             token.write(creds.to_json())
+
+def load_mediapipe():
 
     base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite',
                                       delegate=python.BaseOptions.Delegate.GPU)
@@ -449,78 +397,39 @@ def main():
     global landmarker
     landmarker = FaceLandmarker.create_from_options(options)
 
-    global known_face_encodings
-    global known_face_names
+def load_known_data():
 
     # Загрузка базы известных лиц
-    if os.path.exists(KNOWN_FACES_FILE):
-        with open(KNOWN_FACES_FILE, "rb") as f:
-            known_face_encodings, known_face_names = pickle.load(f)
+    if os.path.exists(global_vars.KNOWN_FACES_FILE):
+        with open(global_vars.KNOWN_FACES_FILE, "rb") as f:
+            global_vars.known_face_encodings, global_vars.known_face_names, global_vars.known_face_images = pickle.load(f)
+
+def load_arduino():
+    global arduino
+    arduino = serial.Serial(port=global_vars.ARDUINO_PORT, baudrate=115200, timeout=.1)
+
+def main():
+    load_mediapipe()
+    load_drive()
+    load_known_data()
+    load_arduino()
+
 
     print("Starting video")
-    cap = cv2.VideoCapture(CAM_PORT)
+    cap = cv2.VideoCapture(global_vars.CAM_PORT)
     print("Video started")
-    frame_count = 0
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(global_vars.WINDOW_NAME, cv2.WINDOW_NORMAL)
 
-    print("[INFO] Нажмите 'U' чтобы сохранить лицо или обновить имеющееся, 'D' чтобы удалить лицо, 'Q' чтобы выйти.")
+    print("[INFO] 'q' чтобы выйти.")
     while True:
-        face_encodings = process(cap)
         key = cv2.waitKey(1)
-
+        ret, frame = cap.read()
+        if not ret:
+            print("Something went wrong with camera")
+            break
+        process(frame)
         if key == ord('q'):
             break
-        elif key == ord('u'):
-            name = input("Введите имя для лица: ")
-            while name == UNKNOWN_NAME:
-                print("Это имя зарезервировано")
-                name = input("Введите имя для лица: ")
-            print(
-                "Теперь сохраните несколько кадров(клавиша 'S'), а потом выйдите(клавиша 'F'), так же вы можете удалить предыдущий кадр(клавиша 'R')")
-            key = cv2.waitKey(1)
-            while key != ord('f'):
-                #     if frame_count % FRAME_SKIP != 0:
-                #          continue
-                face_encodings = process(cap)
-                if key == ord('s'):
-                    if face_encodings:
-                        save(face_encodings[0], name)
-                        print(f"[INFO] Лицо {name} сохранено.")
-                    else:
-                        print("[WARNING] Нет лица для сохранения!")
-                elif key == ord('r'):
-                    if name not in known_face_names or len(known_face_encodings[known_face_names.index(name)]) == 0:
-                        print("[WARNING] Для данного имени отсутствуют сохранения!")
-                    else:
-                        index = known_face_names.index(name)
-                        known_face_encodings[index] = known_face_encodings[index][:-1]
-                        print(f"[INFO] Последний кадр лица {name} удалён.")
-                key = cv2.waitKey(1)
-            save_data()
-            print(f"[INFO] Изменения сохранены!")
-        elif key == ord('d'):
-            if len(known_face_names) > 0:
-                # Показываем список лиц и предлагаем удалить
-                print("Доступные лица для удаления:")
-                for idx, name in enumerate(known_face_names):
-                    print(f"{idx + 1}. {name}")
-
-                choice = input("Введите номер лица для удаления (или 'q' для отмены): ")
-                if choice.lower() == 'q':
-                    continue
-                try:
-                    index_to_delete = int(choice) - 1
-                    if 0 <= index_to_delete < len(known_face_names):
-                        deleted_name = known_face_names.pop(index_to_delete)
-                        known_face_encodings.pop(index_to_delete)
-                        save_data()
-                        print(f"[INFO] Лицо '{deleted_name}' удалено.")
-                    else:
-                        print("[WARNING] Неверный номер.")
-                except ValueError:
-                    print("[WARNING] Введите корректный номер.")
-            else:
-                print("[WARNING] Нет известных лиц для удаления.")
 
     cap.release()
     cv2.destroyAllWindows()

@@ -1,20 +1,76 @@
 import os.path
+import pickle
 import time
+import uuid
 
 import mediapipe as mp
 import cv2
 import shutil
 import face_recognition
-import serial
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
 from matplotlib.image import imread
 
 import global_vars
-from main import load_mediapipe
-from main import load_known_data
-from main import get_locations
-from main import save_data
-from main import save
+from loader import load_known_data, load_mediapipe_image
+from face_recogition_logic import get_locations
 
+
+def save_frame_on_disk(frame, filepath: str):
+    save_result = cv2.imwrite(filepath, frame)
+    return save_result
+
+def save_recognition(name, frame):
+    if not global_vars.SAVE_DETECTION_STATUS:
+        return
+    current_time = time.time()
+
+    if not global_vars.last_saved_time.__contains__(name) or current_time - global_vars.last_saved_time[name] >= global_vars.SAVE_DELAY:
+        timestamp = time.strftime("%Y%m%d_%H%M%S")  # Текущее время как часть имени файла
+        filename = f"{name}_{timestamp}.jpg"
+
+
+        # Печать пути для отладки
+      #  print(f"[INFO] Сохранение изображения {filename}")
+
+        filepath = os.path.join(global_vars.TEMP_PATH, filename)
+        save_result = save_frame_on_disk(frame, filepath)
+
+        # Проверяем, удалось ли сохранить изображение
+        if save_result:
+      #      print(f"[INFO] Сохранено изображение {filename}")
+            global_vars.last_saved_time[name] = current_time  # Обновляем время последнего сохранения
+
+            try:
+                # create drive api client
+                drive_service = build("drive", "v3", credentials=global_vars.creds)
+                file_metadata = {"name": filename, "parents": [global_vars.GOOGLE_DRIVE_FOLDER_ID]}
+                media = MediaFileUpload(filepath, mimetype="image/jpeg")
+                # pylint: disable=maybe-no-member
+                file = (
+                    drive_service.files()
+                    .create(body=file_metadata, media_body=media, fields="id")
+                    .execute()
+                )
+                drive_service.close()
+
+        #        print(f'Изображение отправлено на сервер. File ID: {file.get("id")}')
+
+            except HttpError as error:
+                print(f"An error occurred: {error}")
+                file = None
+
+        else:
+            print(f"[ERROR] Не удалось сохранить изображение в {filename}")
+
+
+
+def save_data_on_disk():
+    with open(global_vars.KNOWN_FACES_FILE, "wb") as f:
+        pickle.dump((global_vars.known_face_encodings, global_vars.known_face_names, global_vars.known_face_images), f)
+    with open(global_vars.SAVED_FORM_ANSWERS_FILE, "wb") as f:
+        pickle.dump(global_vars.saved_form_answers, f)
 
 
 def forget_face(name, j):
@@ -50,28 +106,81 @@ def clean():
         global_vars.known_face_names.pop(idx)
         global_vars.known_face_encodings.pop(idx)
         global_vars.known_face_images.pop(idx)
-    save_data()
+    save_data_on_disk()
+
+def save_from_encoding(face_encoding, name, frame, additional_info = None):
+    filename = name + "-" + str(uuid.uuid4()) + ".jpg"
+    filepath = os.path.join(global_vars.SAVED_FRAMES_FOLDER, name)
+    os.makedirs(filepath, exist_ok=True)
+    savepath = os.path.join(filepath, filename)
+    save_result = save_frame_on_disk(frame, savepath)
+    filepath = os.path.join(filepath, filename)
+    if not save_result:
+        print(f'Can\'t save frame to folder(name = {name}, additional info = {additional_info}')
+    if name not in global_vars.known_face_names:
+        global_vars.known_face_names.append(name)
+        global_vars.known_face_encodings.append([])
+        global_vars.known_face_images.append([])
+
+    index = global_vars.known_face_names.index(name)
+    global_vars.known_face_encodings[index].append(face_encoding)
+    global_vars.known_face_images[index].append(filepath)
 
 
-def save_from_file(filepath: str, name: str):
-    frame = imread(filepath)
-    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+def save_from_frame(frame, name: str, additional_info = None):
     image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-    face_locations = get_locations(frame, image)
-    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
-    if face_encodings:
-        save(face_encodings[0], name, frame)
-        save_data()
-        print(f"[INFO] Лицо {name} сохранено.")
+    results = global_vars.face_image_detector.detect(image=image)
+    face_locations = get_locations(results, frame)
+    face_encodings = face_recognition.face_encodings(frame,face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
+    if len(face_encodings) == 1:
+        save_from_encoding(face_encodings[0], name, frame, additional_info)
+        save_data_on_disk()
+        print(f"[INFO] Лицо {name} сохранено. additional info = {additional_info}")
+    elif len(face_encodings) > 1:
+        print(f'[WARNING] Несколько лиц для сохранения {name} additional info = {additional_info}')
     else:
-        print("[WARNING] Нет лица для сохранения!")
+        print(f"[WARNING] Нет лица для сохранения {name} additional info = {additional_info}")
+
+def save_from_file(name, filepath, additional_info = None):
+    try:
+        frame = imread(filepath)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        save_from_frame(rgb_frame, name, additional_info)
+    except FileNotFoundError:
+        print(f"File not found(name = {name} filepath = {filepath}, additional_info = {additional_info}")
+
+def save_from_file_and_move(name, path, additional_info = None):
+    filepath = os.path.join(global_vars.NEW_FRAMES_FOLDER, path)
+    movefilepath = os.path.join(global_vars.OLD_FRAMES_FOLDER, path)
+    try:
+        frame = imread(filepath)
+        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        save_from_frame(rgb_frame, name, additional_info)
+        shutil.move(filepath, movefilepath)
+    except FileNotFoundError:
+        print(f"File not found(name = {name} filepath = {filepath}, additional_info = {additional_info}")
+
+def autosave():
+    for (_, dirs, _) in os.walk(global_vars.NEW_FRAMES_FOLDER):
+        for name in dirs:
+            path = str(os.path.join(global_vars.NEW_FRAMES_FOLDER, name))
+            movepath = str(os.path.join(global_vars.OLD_FRAMES_FOLDER, name))
+            os.makedirs(movepath, exist_ok=True)
+            for (_, _, file) in os.walk(path):
+                for f in file:
+                    if '.jpg' in f:
+                        filepath = os.path.join(path, f)
+                        frame = imread(filepath, 'jpeg')
+                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        save_from_frame(rgb_frame, name)
+                        movefilepath = os.path.join(movepath, f)
+                        shutil.move(filepath, movefilepath)
 
 def main_saver():
-
-    load_mediapipe()
+    load_mediapipe_image()
     load_known_data()
     while True:
-        key = input("If you want save type - 's', delete frame - 'd', autoload - 'a', to exit - 'q'")
+        key = input("If you want save type - 's', delete frame - 'd', autoload - 'a', save from camera - 'c', to exit - 'q'")
 
         if key == 'q':
             break
@@ -84,13 +193,7 @@ def main_saver():
                 path = input("Now type file path(type 'q' to quite)")
                 if path == 'q':
                     break
-                filepath = os.path.join(global_vars.NEW_FRAMES_FOLDER, path)
-                movefilepath = os.path.join(global_vars.OLD_FRAMES_FOLDER, path)
-                try:
-                    save_from_file(filepath, name)
-                    shutil.move(filepath, movefilepath)
-                except FileNotFoundError:
-                    print("File not found")
+                save_from_file_and_move(name, path)
         elif key == 'd':
             while True:
                 if len(global_vars.known_face_names) > 0:
@@ -98,8 +201,14 @@ def main_saver():
                     print("Доступные лица для удаления:")
                     for idx, name in enumerate(global_vars.known_face_names):
                         print(f"{idx + 1}. {name}")
-                    choice = input("Введите номер лица для удаления (или 'q' для отмены): ")
+                    choice = input("Введите номер лица для удаления ('all' - для удаления всех или 'q' для отмены): ")
                     if choice.lower() == 'q':
+                        break
+                    if choice.lower() == 'all':
+                        while len(global_vars.known_face_names) > 0:
+                            forget_all_faces(global_vars.known_face_names[0])
+                            clean()
+                        save_data_on_disk()
                         break
                     try:
                         index = int(choice) - 1
@@ -114,7 +223,7 @@ def main_saver():
                                 if choice == 'all':
                                     deleted_name = global_vars.known_face_names[index]
                                     forget_all_faces(deleted_name)
-                                    save_data()
+                                    save_data_on_disk()
                                     print(f"[INFO] Лицо '{deleted_name}' удалено.")
                                     break
                                 try:
@@ -122,7 +231,7 @@ def main_saver():
                                     if 0 <= j < len(global_vars.known_face_images[index]):
                                         name = global_vars.known_face_names[index]
                                         forget_face(name, j)
-                                        save_data()
+                                        save_data_on_disk()
                                         print(f"[INFO] Frame deleted.")
                                     else:
                                         print("[WARNING] Неверный номер.")
@@ -136,19 +245,29 @@ def main_saver():
                     print("[WARNING] Нет известных лиц для удаления.")
                     break
         elif key == 'a':
-            for (_, dirs, _) in os.walk(global_vars.NEW_FRAMES_FOLDER):
-                for name in dirs:
-                    path = str(os.path.join(global_vars.NEW_FRAMES_FOLDER, name))
-                    movepath = str(os.path.join(global_vars.OLD_FRAMES_FOLDER, name))
-                    os.makedirs(movepath, exist_ok=True)
-                    for (_, _, file) in os.walk(path):
-                        for f in file:
-                            if '.jpg' in f:
-                                filepath = os.path.join(path, f)
-                                save_from_file(filepath, name)
-                                movefilepath = os.path.join(movepath, f)
-                                shutil.move(filepath, movefilepath)
+            autosave()
+        elif key == 'c':
+            name = input("Enter name: ")
+            print("Starting video")
+            cap = cv2.VideoCapture(global_vars.CAM_PORT)
+            print("Video started")
+            cv2.namedWindow(global_vars.WINDOW_NAME, cv2.WINDOW_NORMAL)
+            print("'q' - exit, 's' - save")
+            while True:
+                key = cv2.waitKey(1)
+                ret, frame = cap.read()
+                cv2.imshow(global_vars.WINDOW_NAME, frame)
+                if not ret:
+                    print("Something went wrong with camera")
+                    break
+                if key == ord('q'):
+                    cv2.destroyWindow(global_vars.WINDOW_NAME)
+                    break
+                elif key == ord('s'):
+                    save_from_frame(frame, name)
+            cap.release()
     clean()
+    cv2.destroyAllWindows()
 
 if __name__ == '__main__':
     main_saver()

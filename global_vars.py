@@ -46,13 +46,17 @@
 # global ARDUINO_PORT
 # global CLOSE_DELAY
 
-last_blink_time = 0  # store timestamp of last blink
-CLOSE_DELAY = 4
+CLOSE_DELAY = 3
+SAVE_DETECTION_STATUS = True
+USE_ARDUINO = True
+FORMS_AUTOLOAD = True
+FORMS_CHECK_INTERVAL = 10
 
-CAM_PORT = '/dev/video0'
+CAM_PORT = '/dev/video2'
 ARDUINO_PORT = '/dev/ttyUSB0'
 
 KNOWN_FACES_FILE = "known_faces.pkl"
+SAVED_FORM_ANSWERS_FILE = "saved_form_answers.pkl"
 UNKNOWN_NAME = "unknown"
 WINDOW_NAME = "Face Recognition"
 
@@ -61,6 +65,16 @@ OLD_FRAMES_FOLDER = "old_frames"
 SAVED_FRAMES_FOLDER = "saved_faces"
 
 FACE_RECOGNITION_MODEL = "large"
+
+face_video_detector = None
+face_image_detector = None
+face_mesh = None
+landmarker = None
+arduino = None
+
+last_blink_time = 0
+last_forms_check_time = 0
+frames_counter = [0]
 
 # pixels scale
 FRAME_SCALE_TOP = 27
@@ -73,7 +87,7 @@ MAX_FACES = 6
 LAST_FRAMES_AMOUNT = 25
 
 # Be careful, it mustn't be bigger than LAST_FRAMES_AMOUNT
-MIN_FRAMES_FOR_DETECTION = 12
+MIN_FRAMES_FOR_DETECTION = 6
 
 # 1 - check avg distance
 # 2 - check encodings coincidence percent
@@ -83,25 +97,28 @@ FACE_DETECTION_MODE = 2
 MAX_AVG_DISTANCE = 0.54
 
 # For encodings coincidence percent
-MAX_PERCENT_DISTANCE = 0.6
-MIN_MATCH_FOR_PERSON = 0.4
+MAX_PERCENT_DISTANCE = 0.55
+MIN_MATCH_FOR_PERSON = 0.34
 
 known_face_encodings = []
 known_face_images = []
 known_face_names = []
+saved_form_answers = []
 
-# -------SAVING--------
+# ---------------SAVING AND LOADING FROM FORMS----------------
 
 TEMP_PATH = "tmp"
 last_saved_time = {}
 SAVE_DELAY = 5
 GOOGLE_DRIVE_FOLDER_ID = "1i-DoUmzkX9USiMLOOCeXjog52rma7RPW"
-SAVE_DETECTION_STATUS = False
+GOOGLE_FORM_ID = "1xfl6lFFMeqXw-B9e1Eqa4MkxE4Gmv-qaBBRTTd2ozvM"
+FORM_ANSWER_ID = '7d1f44f4'
+EMAIL_DOMAIN = '@fmschool72.ru'
 
-SCOPES = ["https://www.googleapis.com/auth/drive.file"]
+SCOPES = ["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/forms.responses.readonly"]
 creds = None
 
-# -------EYES-----------
+# ----------------EYES----------------
 MIN_EYES_DIFFERENCE = 0.15
 MIN_DIFS_FOR_BLICK = 0.3
 
@@ -122,9 +139,5 @@ LEFT_EYE = [362, 385, 387, 263, 373, 380]
 FRAMES_FOR_EYES_CHECK = 9
 
 eyes = [{}] * LAST_FRAMES_AMOUNT
-raw_eyes = []
-eyes_ready = False
-
-last_frame_time = 0
 
 iteration = 0

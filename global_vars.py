@@ -52,6 +52,22 @@ USE_ARDUINO = True
 FORMS_AUTOLOAD = True
 FORMS_CHECK_INTERVAL = 10
 
+
+#-----------FRAMES------------
+
+LAST_FRAMES_AMOUNT = 25
+
+# Be careful, it mustn't be bigger than LAST_FRAMES_AMOUNT
+MIN_FRAMES_FOR_DETECTION = 15
+
+NEED_BLINKS = 1
+
+FRAMES_FOR_EYES_CHECK = 9
+
+WAIT_FRAMES_FOR_DETECTION = 5
+
+
+
 CAM_PORT = '/dev/video2'
 ARDUINO_PORT = '/dev/ttyUSB0'
 
@@ -72,22 +88,26 @@ face_mesh = None
 landmarker = None
 arduino = None
 
+
+known_face_encodings = []
+known_face_images = []
+known_face_names = []
+saved_form_answers = []
+eyes = [{}] * LAST_FRAMES_AMOUNT
+recognition_count = {}
+
+
+
+
 last_blink_time = 0
 last_forms_check_time = 0
 frames_counter = [0]
 
 # pixels scale
-FRAME_SCALE_TOP = 27
-FRAME_SCALE_LEFT = 7
-FRAME_SCALE_BOTTOM = 12
-FRAME_SCALE_RIGHT = 7
+FRAME_SCALE_HEIGHT = 1.2
+FRAME_SCALE_WIDTH = 1.1
 
-MAX_FACES = 6
-
-LAST_FRAMES_AMOUNT = 25
-
-# Be careful, it mustn't be bigger than LAST_FRAMES_AMOUNT
-MIN_FRAMES_FOR_DETECTION = 6
+MAX_FACES = 12
 
 # 1 - check avg distance
 # 2 - check encodings coincidence percent
@@ -100,10 +120,6 @@ MAX_AVG_DISTANCE = 0.54
 MAX_PERCENT_DISTANCE = 0.55
 MIN_MATCH_FOR_PERSON = 0.34
 
-known_face_encodings = []
-known_face_images = []
-known_face_names = []
-saved_form_answers = []
 
 # ---------------SAVING AND LOADING FROM FORMS----------------
 
@@ -122,8 +138,6 @@ creds = None
 MIN_EYES_DIFFERENCE = 0.15
 MIN_DIFS_FOR_BLICK = 0.3
 
-NEED_BLINKS = 1
-
 BLINKED_EYES_OPEN = False
 
 # MAX VALUE FOR CLOSED EYE
@@ -136,8 +150,6 @@ FRAME_FOR_EYES_SCALE = 0.5
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
 LEFT_EYE = [362, 385, 387, 263, 373, 380]
 
-FRAMES_FOR_EYES_CHECK = 9
 
-eyes = [{}] * LAST_FRAMES_AMOUNT
 
 iteration = 0

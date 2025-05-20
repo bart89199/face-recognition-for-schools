@@ -8,7 +8,9 @@ import face_recognition
 import mediapipe as mp
 
 import global_vars
-from face_recogition_logic import get_locations, process_eyes, recognition, analyze_eyes, process_ready_faces
+from face_recogition_logic import get_locations, process_eyes, recognition, analyze_eyes, process_ready_faces, \
+    clear_double_detection
+from frame_handler import get_rgb_frame
 from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe_video, load_mediapipe_image
 from google_form_saver import load_data_from_forms
 from saver import save_recognition
@@ -23,15 +25,16 @@ def clear():
 def process(frame):
     global_vars.iteration += 1
     clear()
-    # rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    rgb_frame = get_rgb_frame(frame)
 
     image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
 
     timestamp_ms = int(time.time() * 1000)
 
-    results = global_vars.face_video_detector.detect_video(image, timestamp_ms)
+    results = global_vars.face_video_detector.detect_for_video(image, timestamp_ms)
     face_locations = get_locations(results, frame)
-    face_encodings = face_recognition.face_encodings(frame, face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations,
+                                                     model=global_vars.FACE_RECOGNITION_MODEL)
 
     landmarkers = global_vars.landmarker.detect_for_video(image, timestamp_ms)
     raw_eyes = process_eyes(landmarkers, frame)
@@ -45,8 +48,12 @@ def process(frame):
 
     analyze_eyes(raw_eyes, face_names, face_locations)
 
-    alive_names = process_ready_faces(frame, face_locations, face_names)
+    face_names, face_encodings, face_locations = clear_double_detection(face_names, face_encodings, face_locations)
 
+    alive_names, save = process_ready_faces(frame, face_locations, face_names)
+    if save:
+        th = threading.Thread(target=save_recognition, args=('recogn', frame))
+        th.start()
     for name in alive_names:
         th = threading.Thread(target=save_recognition, args=(name, frame))
         th.start()

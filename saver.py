@@ -12,7 +12,9 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 from matplotlib.image import imread
 
+import frame_handler
 import global_vars
+from frame_handler import get_rgb_frame, read_frame_file
 from loader import load_known_data, load_mediapipe_image
 from face_recogition_logic import get_locations
 
@@ -21,25 +23,22 @@ def save_frame_on_disk(frame, filepath: str):
     save_result = cv2.imwrite(filepath, frame)
     return save_result
 
+
 def save_recognition(name, frame):
     if not global_vars.SAVE_DETECTION_STATUS:
         return
     current_time = time.time()
 
-    if not global_vars.last_saved_time.__contains__(name) or current_time - global_vars.last_saved_time[name] >= global_vars.SAVE_DELAY:
+    if not global_vars.last_saved_time.__contains__(name) or current_time - global_vars.last_saved_time[
+        name] >= global_vars.SAVE_DELAY:
         timestamp = time.strftime("%Y%m%d_%H%M%S")  # Текущее время как часть имени файла
         filename = f"{name}_{timestamp}.jpg"
-
-
-        # Печать пути для отладки
-      #  print(f"[INFO] Сохранение изображения {filename}")
 
         filepath = os.path.join(global_vars.TEMP_PATH, filename)
         save_result = save_frame_on_disk(frame, filepath)
 
-        # Проверяем, удалось ли сохранить изображение
         if save_result:
-      #      print(f"[INFO] Сохранено изображение {filename}")
+            #      print(f"[INFO] Сохранено изображение {filename}")
             global_vars.last_saved_time[name] = current_time  # Обновляем время последнего сохранения
 
             try:
@@ -47,7 +46,6 @@ def save_recognition(name, frame):
                 drive_service = build("drive", "v3", credentials=global_vars.creds)
                 file_metadata = {"name": filename, "parents": [global_vars.GOOGLE_DRIVE_FOLDER_ID]}
                 media = MediaFileUpload(filepath, mimetype="image/jpeg")
-                # pylint: disable=maybe-no-member
                 file = (
                     drive_service.files()
                     .create(body=file_metadata, media_body=media, fields="id")
@@ -55,15 +53,13 @@ def save_recognition(name, frame):
                 )
                 drive_service.close()
 
-        #        print(f'Изображение отправлено на сервер. File ID: {file.get("id")}')
+            #        print(f'Изображение отправлено на сервер. File ID: {file.get("id")}')
 
             except HttpError as error:
                 print(f"An error occurred: {error}")
-                file = None
 
         else:
             print(f"[ERROR] Не удалось сохранить изображение в {filename}")
-
 
 
 def save_data_on_disk():
@@ -82,6 +78,7 @@ def forget_face(name, j):
     except IndexError and ValueError:
         print(f'Can\'t remove face {name} {j}')
 
+
 def forget_all_faces(name):
     try:
         i = global_vars.known_face_names.index(name)
@@ -89,6 +86,7 @@ def forget_all_faces(name):
             forget_face(name, 0)
     except ValueError:
         print(f'Can\'t find face {name}')
+
 
 def clean():
     rem = []
@@ -100,7 +98,7 @@ def clean():
         try:
             os.rmdir(os.path.join(global_vars.SAVED_FRAMES_FOLDER, name))
         except FileNotFoundError:
-            print(f'Folder for {name} didn\'t exist')
+            print(f'Folder for {name} don\'t exist')
         except OSError:
             print(f'Not all files for {name} deleted')
         global_vars.known_face_names.pop(idx)
@@ -108,8 +106,8 @@ def clean():
         global_vars.known_face_images.pop(idx)
     save_data_on_disk()
 
-def save_from_encoding(face_encoding, name, frame, additional_info = None):
-    filename = name + "-" + str(uuid.uuid4()) + ".jpg"
+
+def save_from_encoding(face_encoding, name, frame, filename, additional_info=None):
     filepath = os.path.join(global_vars.SAVED_FRAMES_FOLDER, name)
     os.makedirs(filepath, exist_ok=True)
     savepath = os.path.join(filepath, filename)
@@ -127,13 +125,14 @@ def save_from_encoding(face_encoding, name, frame, additional_info = None):
     global_vars.known_face_images[index].append(filepath)
 
 
-def save_from_frame(frame, name: str, additional_info = None):
+def save_from_frame(frame, name: str, filename, additional_info=None):
+    rgb_frame = get_rgb_frame(frame)
     image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
     results = global_vars.face_image_detector.detect(image=image)
     face_locations = get_locations(results, frame)
-    face_encodings = face_recognition.face_encodings(frame,face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
     if len(face_encodings) == 1:
-        save_from_encoding(face_encodings[0], name, frame, additional_info)
+        save_from_encoding(face_encodings[0], name, frame, filename, additional_info)
         save_data_on_disk()
         print(f"[INFO] Лицо {name} сохранено. additional info = {additional_info}")
     elif len(face_encodings) > 1:
@@ -141,24 +140,25 @@ def save_from_frame(frame, name: str, additional_info = None):
     else:
         print(f"[WARNING] Нет лица для сохранения {name} additional info = {additional_info}")
 
-def save_from_file(name, filepath, additional_info = None):
+
+def save_from_file(name, filepath, filename, additional_info=None):
     try:
-        frame = imread(filepath)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        save_from_frame(rgb_frame, name, additional_info)
+        frame = read_frame_file(filepath)
+        save_from_frame(frame, name, filename, additional_info)
     except FileNotFoundError:
         print(f"File not found(name = {name} filepath = {filepath}, additional_info = {additional_info}")
 
-def save_from_file_and_move(name, path, additional_info = None):
+
+def save_from_file_and_move(name, path, filename, additional_info=None):
     filepath = os.path.join(global_vars.NEW_FRAMES_FOLDER, path)
     movefilepath = os.path.join(global_vars.OLD_FRAMES_FOLDER, path)
     try:
-        frame = imread(filepath)
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        save_from_frame(rgb_frame, name, additional_info)
+        frame = read_frame_file(filepath)
+        save_from_frame(frame, name, filename, additional_info)
         shutil.move(filepath, movefilepath)
     except FileNotFoundError:
         print(f"File not found(name = {name} filepath = {filepath}, additional_info = {additional_info}")
+
 
 def autosave():
     for (_, dirs, _) in os.walk(global_vars.NEW_FRAMES_FOLDER):
@@ -170,17 +170,19 @@ def autosave():
                 for f in file:
                     if '.jpg' in f:
                         filepath = os.path.join(path, f)
-                        frame = imread(filepath, 'jpeg')
-                        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        save_from_frame(rgb_frame, name)
+                        frame = read_frame_file(filepath)
+                        filename = name + "-" + str(uuid.uuid4()) + ".jpg"
+                        save_from_frame(frame, name, filename)
                         movefilepath = os.path.join(movepath, f)
                         shutil.move(filepath, movefilepath)
+
 
 def main_saver():
     load_mediapipe_image()
     load_known_data()
     while True:
-        key = input("If you want save type - 's', delete frame - 'd', autoload - 'a', save from camera - 'c', to exit - 'q'")
+        key = input(
+            "If you want save type - 's', delete frame - 'd', autoload - 'a', save from camera - 'c', to exit - 'q'")
 
         if key == 'q':
             break
@@ -193,7 +195,8 @@ def main_saver():
                 path = input("Now type file path(type 'q' to quite)")
                 if path == 'q':
                     break
-                save_from_file_and_move(name, path)
+                filename = name + "-" + str(uuid.uuid4()) + ".jpg"
+                save_from_file_and_move(name, path, filename)
         elif key == 'd':
             while True:
                 if len(global_vars.known_face_names) > 0:
@@ -264,10 +267,12 @@ def main_saver():
                     cv2.destroyWindow(global_vars.WINDOW_NAME)
                     break
                 elif key == ord('s'):
-                    save_from_frame(frame, name)
+                    filename = name + "-" + str(uuid.uuid4()) + ".jpg"
+                    save_from_frame(frame, name, filename)
             cap.release()
     clean()
     cv2.destroyAllWindows()
+
 
 if __name__ == '__main__':
     main_saver()

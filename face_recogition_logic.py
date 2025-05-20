@@ -1,6 +1,6 @@
 import threading
 
-
+from enum import Enum
 import cv2
 import face_recognition
 import numpy as np
@@ -9,8 +9,6 @@ from mediapipe.tasks.python.components.containers import DetectionResult
 from mediapipe.tasks.python.vision import FaceLandmarkerResult
 
 import global_vars
-
-
 
 
 def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
@@ -31,6 +29,7 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
 
 def process_eyes(result: FaceLandmarkerResult, frame):
     h, w, _ = frame.shape
+
     raw_eyes = []
     for landmarks in result.face_landmarks:
         left_eye = eye_aspect_ratio(landmarks, global_vars.LEFT_EYE, w, h)
@@ -55,17 +54,18 @@ def get_locations(results: DetectionResult, frame):
     if results.detections:
         h, w, _ = frame.shape
         for detection in results.detections:
-
             bbox = detection.bounding_box
-            left = bbox.origin_x
-            top = bbox.origin_y
-            right = bbox.origin_x + bbox.width
-            bottom = bbox.origin_y + bbox.height
 
-            top -= global_vars.FRAME_SCALE_TOP
-            left -= global_vars.FRAME_SCALE_LEFT
-            bottom += global_vars.FRAME_SCALE_BOTTOM
-            right += global_vars.FRAME_SCALE_RIGHT
+            mid_x = bbox.origin_x + bbox.width // 2
+            mid_y = bbox.origin_y + bbox.height // 2
+
+            nh = (bbox.height * global_vars.FRAME_SCALE_HEIGHT) // 2
+            nw = (bbox.width * global_vars.FRAME_SCALE_WIDTH) // 2
+
+            left = int(mid_x - nw)
+            top = int(mid_y - nh)
+            right = int(mid_x + nw)
+            bottom = int(mid_y + nh)
 
             top = max(top, 0)
             left = max(left, 0)
@@ -74,6 +74,7 @@ def get_locations(results: DetectionResult, frame):
 
             face_locations.append((top, right, bottom, left))
     return face_locations
+
 
 def check_encoding_avg(face_encoding):
     mx = [0, 0]
@@ -117,6 +118,16 @@ def recognition(face_encoding):
     else:
         return check_encoding_percent(face_encoding)
 
+def clear_double_detection(face_names, face_encodings, face_locations):
+    already = []
+    for i in range(len(face_names) - 1, -1, -1):
+        name = face_names[i]
+        if already.__contains__(name):
+            face_names.pop(i)
+            face_encodings.pop(i)
+            face_locations.pop(i)
+        already.append(name)
+    return face_names, face_encodings, face_locations
 
 def analyze_eyes(raw_eyes, face_names, face_locations):
     for x, y, avg in raw_eyes:
@@ -165,9 +176,18 @@ def check_face(name):
     return detect_cnt >= global_vars.MIN_FRAMES_FOR_DETECTION, blinks >= global_vars.NEED_BLINKS, avg <= global_vars.CLOSE_EYES_THRESHOLD
 
 
+# class Recognition_status(Enum):
+#     unknown = (0, 0, 0)
+#     recognized = (1, 0, 0)
+#     blinked = (1, 0, 1)
+#     alive = (1, 1, 0)
+#     alive_blinked = (1, 1, 1)
+
+
 def process_ready_faces(frame, face_locations, face_names):
     alive_names = []
     save = False
+    new_counter = {}
     for (top, right, bottom, left), name in zip(face_locations, face_names):
         color = (0, 0, 255)
         recogn, alive, blinked = check_face(name)
@@ -179,7 +199,10 @@ def process_ready_faces(frame, face_locations, face_names):
             if blinked:
                 color = (255, 33, 170)
             if alive and (not blinked or global_vars.BLINKED_EYES_OPEN):
-                alive_names.append(name)
+                new_counter[name] = (global_vars.recognition_count[
+                                            name] if global_vars.recognition_count.__contains__(name) else 0) + 1
+                if new_counter[name] >= global_vars.WAIT_FRAMES_FOR_DETECTION:
+                    alive_names.append(name)
         else:
             if name != global_vars.UNKNOWN_NAME:
                 color = (80, 127, 255)
@@ -188,5 +211,5 @@ def process_ready_faces(frame, face_locations, face_names):
         cv2.putText(frame, name, (left + 5, bottom - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
 
-    return alive_names
-
+    global_vars.recognition_count = new_counter
+    return alive_names, save

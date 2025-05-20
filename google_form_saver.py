@@ -7,7 +7,9 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
 from matplotlib.image import imread
 
+import frame_handler
 import global_vars
+from frame_handler import read_frame_file
 from loader import load_googleapi, load_known_data, load_mediapipe_image
 from saver import save_from_frame, save_data_on_disk
 
@@ -43,9 +45,8 @@ def load_data_from_forms():
             file_id = str(answer['fileId'])
             file = export_file(file_id)
             if file is not None:
-                frame = imread(file, 'jpeg')
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                save_from_frame(rgb_frame, name, f'file id = {file_id}, name = {name}')
+                frame = read_frame_file(file)
+                save_from_frame(frame, name, f'{file_id}.jpg', f'file id = {file_id}, name = {name}')
             file.close()
         global_vars.saved_form_answers.append(response_id)
         save_data_on_disk()

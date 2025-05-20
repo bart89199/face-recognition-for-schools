@@ -40,7 +40,7 @@ def load_mediapipe_video():
 
     options = FaceLandmarkerOptions(
         base_options=BaseOptions(model_asset_path='face_landmarker.task', delegate=python.BaseOptions.Delegate.GPU),
-        num_faces=10, running_mode=RunningMode.VIDEO,
+        num_faces=5, running_mode=RunningMode.VIDEO,
         min_face_detection_confidence=0.5
     )
     global_vars.landmarker = FaceLandmarker.create_from_options(options)

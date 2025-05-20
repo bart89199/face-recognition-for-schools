@@ -50,6 +50,10 @@ CLOSE_DELAY = 3
 SAVE_DETECTION_STATUS = True
 USE_ARDUINO = True
 FORMS_AUTOLOAD = True
+RECORD_VIDEO = True
+VIDEO_FPS = 30.0
+
+
 FORMS_CHECK_INTERVAL = 10
 
 
@@ -79,6 +83,7 @@ WINDOW_NAME = "Face Recognition"
 NEW_FRAMES_FOLDER = "new_frames"
 OLD_FRAMES_FOLDER = "old_frames"
 SAVED_FRAMES_FOLDER = "saved_faces"
+VIDEOS_FOLDER = "videos"
 
 FACE_RECOGNITION_MODEL = "large"
 
@@ -87,6 +92,7 @@ face_image_detector = None
 landmarker_image = None
 landmarker = None
 arduino = None
+out_video = None
 
 
 known_face_encodings = []

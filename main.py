@@ -1,6 +1,8 @@
+import os.path
 import threading
 
 import time
+import uuid
 
 import cv2
 import face_recognition
@@ -82,6 +84,8 @@ def process(frame):
     cv2.putText(frame, "fps: " + str(int(fps)), (500, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     global_vars.last_frame_time = cur_time
+    if global_vars.RECORD_VIDEO:
+        global_vars.out_video.write(frame)
     cv2.imshow(global_vars.WINDOW_NAME, frame)
     return face_encodings
 
@@ -111,6 +115,14 @@ def main():
     print("Video started")
     cv2.namedWindow(global_vars.WINDOW_NAME, cv2.WINDOW_NORMAL)
 
+    if global_vars.RECORD_VIDEO:
+        name = f'{uuid.uuid4()}.avi'
+        os.makedirs(global_vars.VIDEOS_FOLDER, exist_ok=True)
+        filepath = os.path.join(global_vars.VIDEOS_FOLDER, name)
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        global_vars.out_video = cv2.VideoWriter(filepath, 0x44495658, global_vars.VIDEO_FPS, (frame_width, frame_height))
+
     print("[INFO] 'q' чтобы выйти.")
     while True:
         key = cv2.waitKey(1)
@@ -125,6 +137,8 @@ def main():
     cap.release()
     cv2.destroyAllWindows()
     close_door()
+    if global_vars.RECORD_VIDEO:
+        global_vars.out_video.release()
 
 
 if __name__ == '__main__':

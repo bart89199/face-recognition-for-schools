@@ -10,13 +10,11 @@ import face_recognition
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
-from matplotlib.image import imread
 
-import frame_handler
 import global_vars
 from frame_handler import get_rgb_frame, read_frame_file
-from loader import load_known_data, load_mediapipe_image
-from face_recogition_logic import get_locations
+from loader import load_known_data, load_googleapi, load_mediapipe
+from face_recogition_logic import get_locations_and_eyes
 
 
 def save_frame_on_disk(frame, filepath: str):
@@ -128,9 +126,10 @@ def save_from_encoding(face_encoding, name, frame, filename, additional_info=Non
 def save_from_frame(frame, name: str, filename, additional_info=None):
     rgb_frame = get_rgb_frame(frame)
     image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-    results = global_vars.face_image_detector.detect(image=image)
-    face_locations = get_locations(results, frame)
-    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations, model=global_vars.FACE_RECOGNITION_MODEL)
+    landmarkers = global_vars.landmarker_image.detect(get_rgb_frame(image))
+    face_locations, _ = get_locations_and_eyes(landmarkers, frame)
+    face_encodings = face_recognition.face_encodings(rgb_frame, face_locations,
+                                                     model=global_vars.FACE_RECOGNITION_MODEL)
     if len(face_encodings) == 1:
         save_from_encoding(face_encodings[0], name, frame, filename, additional_info)
         save_data_on_disk()
@@ -178,11 +177,14 @@ def autosave():
 
 
 def main_saver():
-    load_mediapipe_image()
+    from google_form_saver import get_forms_answers, forget_forms_response, load_data_from_forms, load_response
+
     load_known_data()
+    load_mediapipe()
+    load_googleapi()
     while True:
         key = input(
-            "If you want save type - 's', delete frame - 'd', autoload - 'a', save from camera - 'c', to exit - 'q'")
+            "If you want save type - 's', delete frame - 'd', autoload - 'a', save from camera - 'c', forget form answer - 'ff', load all unloaded forms answers - 'af', load forms answer - 'lf', to exit - 'q'")
 
         if key == 'q':
             break
@@ -270,6 +272,73 @@ def main_saver():
                     filename = name + "-" + str(uuid.uuid4()) + ".jpg"
                     save_from_frame(frame, name, filename)
             cap.release()
+        elif key == 'ff':
+            while True:
+                responses = get_forms_answers()['responses']
+                clean()
+                if len(responses) > 0:
+                    print("Доступные ответы для удаления:")
+                    for idx, response in enumerate(responses):
+                        if global_vars.saved_form_answers.__contains__(response['responseId']):
+                            print(f"{idx + 1}. {response['respondentEmail']}")
+                    choice = input("Введите номер ответа для удаления ('all' - для удаления всех или 'q' для отмены): ")
+                    if choice.lower() == 'q':
+                        break
+                    if choice.lower() == 'all':
+                        delete_format = input(
+                            "Enter '0' - to delete data and response id, '1' - to delete just data, '2' - to delete just response id")
+                        for response in responses:
+                            forget_forms_response(response, delete_format)
+                        save_data_on_disk()
+                        clean()
+                        break
+                    try:
+                        index = int(choice) - 1
+                        if 0 <= index < len(responses):
+                            delete_format = input(
+                                "Enter '0' - to delete data and response id, '1' - to delete just data, '2' - to delete just response id")
+                            forget_forms_response(responses[index], delete_format)
+                        else:
+                            print("[WARNING] Неверный номер.")
+                    except ValueError:
+                        print("[WARNING] Введите корректный номер.")
+                else:
+                    print("[WARNING] Нет известных сохранённых форм для удаления.")
+                    break
+        elif key == 'af':
+            load_data_from_forms()
+        elif key == 'lf':
+            while True:
+                responses = get_forms_answers()['responses']
+                clean()
+                if len(responses) > 0:
+                    print("Доступные ответы для добавления:")
+                    for idx, response in enumerate(responses):
+                        print(f"{idx + 1}. {response['respondentEmail']}")
+                    choice = input(
+                        "Введите номер ответа для добавления ('all' - для добавления всех или 'q' для отмены): ")
+                    if choice.lower() == 'q':
+                        break
+                    if choice.lower() == 'all':
+                        save_format = input(
+                            "Enter '0' - to save data and response id, '1' - to save just data, '2' - to save just response id")
+                        for response in responses:
+                            load_response(response, False, save_format)
+                        break
+                    try:
+                        index = int(choice) - 1
+                        if 0 <= index < len(responses):
+                            save_format = input(
+                                "Enter '0' - to save data and response id, '1' - to save just data, '2' - to save just response id")
+                            load_response(responses[index], False, save_format)
+                        else:
+                            print("[WARNING] Неверный номер.")
+                    except ValueError:
+                        print("[WARNING] Введите корректный номер.")
+                else:
+                    print("[WARNING] Нет известных форм.")
+                    break
+
     clean()
     cv2.destroyAllWindows()
 

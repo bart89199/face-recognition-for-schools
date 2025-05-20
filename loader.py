@@ -31,12 +31,12 @@ def load_googleapi():
             token.write(global_vars.creds.to_json())
 
 
-def load_mediapipe_video():
-    base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite',
-                                      delegate=python.BaseOptions.Delegate.GPU)
-    face_detector_options = vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=0.5, running_mode=RunningMode.VIDEO)
-
-    global_vars.face_video_detector = vision.FaceDetector.create_from_options(face_detector_options)
+def load_mediapipe():
+    # base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite',
+    #                                   delegate=python.BaseOptions.Delegate.GPU)
+    # face_detector_options = vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=0.5, running_mode=RunningMode.VIDEO)
+    #
+    # global_vars.face_video_detector = vision.FaceDetector.create_from_options(face_detector_options)
 
     options = FaceLandmarkerOptions(
         base_options=BaseOptions(model_asset_path='face_landmarker.task', delegate=python.BaseOptions.Delegate.GPU),
@@ -45,13 +45,18 @@ def load_mediapipe_video():
     )
     global_vars.landmarker = FaceLandmarker.create_from_options(options)
 
-def load_mediapipe_image():
-    base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite',
-                                      delegate=python.BaseOptions.Delegate.GPU)
-    face_detector_options = vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=0.5,
-                                                       running_mode=RunningMode.IMAGE)
-
-    global_vars.face_image_detector = vision.FaceDetector.create_from_options(face_detector_options)
+    options = FaceLandmarkerOptions(
+        base_options=BaseOptions(model_asset_path='face_landmarker.task', delegate=python.BaseOptions.Delegate.GPU),
+        num_faces=5, running_mode=RunningMode.IMAGE,
+        min_face_detection_confidence=0.5
+    )
+    global_vars.landmarker_image = FaceLandmarker.create_from_options(options)
+#     base_options = python.BaseOptions(model_asset_path='blaze_face_short_range.tflite',
+#                                       delegate=python.BaseOptions.Delegate.GPU)
+#     face_detector_options = vision.FaceDetectorOptions(base_options=base_options, min_detection_confidence=0.5,
+#                                                        running_mode=RunningMode.IMAGE)
+#
+#     global_vars.face_image_detector = vision.FaceDetector.create_from_options(face_detector_options)
 
 
 def load_known_data():

@@ -27,53 +27,82 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
     return ear
 
 
-def process_eyes(result: FaceLandmarkerResult, frame):
-    h, w, _ = frame.shape
+# def process_eyes(result: FaceLandmarkerResult, frame):
+#     h, w, _ = frame.shape
+#
+#     raw_eyes = []
+#     for landmarks in result.face_landmarks:
+#         left_eye = eye_aspect_ratio(landmarks, global_vars.LEFT_EYE, w, h)
+#         right_eye = eye_aspect_ratio(landmarks, global_vars.RIGHT_EYE, w, h)
+#         avg_ear = (left_eye + right_eye) / 2.0
+#
+#         pos_x = 0
+#         pos_y = 0
+#         for p in landmarks:
+#             pos_x += p.x * w
+#             pos_y += p.y * h
+#
+#         pos_x /= len(landmarks)
+#         pos_y /= len(landmarks)
+#
+#         raw_eyes.append((pos_x, pos_y, avg_ear))
+#     return raw_eyes
+#
 
+# def get_locations(results: DetectionResult, frame):
+#     face_locations = []
+#     if results.detections:
+#         h, w, _ = frame.shape
+#         for detection in results.detections:
+#             bbox = detection.bounding_box
+#
+#             mid_x = bbox.origin_x + bbox.width // 2
+#             mid_y = bbox.origin_y + bbox.height // 2
+#
+#             nh = (bbox.height * global_vars.FRAME_SCALE_HEIGHT) // 2
+#             nw = (bbox.width * global_vars.FRAME_SCALE_WIDTH) // 2
+#
+#             left = int(mid_x - nw)
+#             top = int(mid_y - nh)
+#             right = int(mid_x + nw)
+#             bottom = int(mid_y + nh)
+#
+#             top = max(top, 0)
+#             left = max(left, 0)
+#             bottom = min(bottom, h)
+#             right = min(right, w)
+#
+#             face_locations.append((top, right, bottom, left))
+#     return face_locations
+
+def get_locations_and_eyes(results: FaceLandmarkerResult, frame):
+    h, w, _ = frame.shape
+    face_locations = []
     raw_eyes = []
-    for landmarks in result.face_landmarks:
+    for landmarks in results.face_landmarks:
         left_eye = eye_aspect_ratio(landmarks, global_vars.LEFT_EYE, w, h)
         right_eye = eye_aspect_ratio(landmarks, global_vars.RIGHT_EYE, w, h)
-        avg_ear = (left_eye + right_eye) / 2.0
-
-        pos_x = 0
-        pos_y = 0
+        avg_eyes = (left_eye + right_eye) / 2.0
+        raw_eyes.append(avg_eyes)
+        left = 1e9
+        right = 0
+        top = 1e9
+        bottom = 0
         for p in landmarks:
-            pos_x += p.x * w
-            pos_y += p.y * h
-
-        pos_x /= len(landmarks)
-        pos_y /= len(landmarks)
-
-        raw_eyes.append((pos_x, pos_y, avg_ear))
-    return raw_eyes
-
-
-def get_locations(results: DetectionResult, frame):
-    face_locations = []
-    if results.detections:
-        h, w, _ = frame.shape
-        for detection in results.detections:
-            bbox = detection.bounding_box
-
-            mid_x = bbox.origin_x + bbox.width // 2
-            mid_y = bbox.origin_y + bbox.height // 2
-
-            nh = (bbox.height * global_vars.FRAME_SCALE_HEIGHT) // 2
-            nw = (bbox.width * global_vars.FRAME_SCALE_WIDTH) // 2
-
-            left = int(mid_x - nw)
-            top = int(mid_y - nh)
-            right = int(mid_x + nw)
-            bottom = int(mid_y + nh)
+            x = p.x * w
+            y = p.y * h
+            left = int(min(left, x))
+            right = int(max(right, x))
+            top = int(min(top, y))
+            bottom = int(max(bottom, y))
 
             top = max(top, 0)
             left = max(left, 0)
             bottom = min(bottom, h)
             right = min(right, w)
 
-            face_locations.append((top, right, bottom, left))
-    return face_locations
+        face_locations.append((top, right, bottom, left))
+    return face_locations, raw_eyes
 
 
 def check_encoding_avg(face_encoding):
@@ -118,40 +147,26 @@ def recognition(face_encoding):
     else:
         return check_encoding_percent(face_encoding)
 
-def clear_double_detection(face_names, face_encodings, face_locations):
+
+def clear_double_detection(face_names, face_metrics):
     already = []
     for i in range(len(face_names) - 1, -1, -1):
         name = face_names[i]
+        if name == global_vars.UNKNOWN_NAME:
+            continue
         if already.__contains__(name):
             face_names.pop(i)
-            face_encodings.pop(i)
-            face_locations.pop(i)
+            for j in range(0, len(face_metrics)):
+                face_metrics[j].pop(i)
         already.append(name)
-    return face_names, face_encodings, face_locations
-
-def analyze_eyes(raw_eyes, face_names, face_locations):
-    for x, y, avg in raw_eyes:
-        for idx, (top, left, bottom, right) in enumerate(face_locations):
-            if face_names[idx] == global_vars.UNKNOWN_NAME:
-                continue
-            mid_x = (right + left) // 2
-            mid_y = (top + bottom) // 2
-            h = bottom - top
-            w = left - right
-            h = h * global_vars.FRAME_FOR_EYES_SCALE
-            w = w * global_vars.FRAME_FOR_EYES_SCALE
-            top = mid_y - h // 2
-            bottom = mid_y + h // 2
-            left = mid_x - w // 2
-            right = mid_x + w // 2
-            if top < y < bottom and left < x < right:
-                global_vars.eyes[0][face_names[idx]] = (avg, 0)
+    return face_names, face_metrics
 
 
-def check_face(name):
-    if not global_vars.eyes[0].__contains__(name):
+
+
+def check_face(name, avg):
+    if name == global_vars.UNKNOWN_NAME:
         return False, False, False
-    avg, _ = global_vars.eyes[0][name]
     difs = 0
     cnt = 0
     blinks = 0
@@ -184,13 +199,15 @@ def check_face(name):
 #     alive_blinked = (1, 1, 1)
 
 
-def process_ready_faces(frame, face_locations, face_names):
+def process_ready_faces(frame, face_locations, face_names, raw_eyes):
+
+
     alive_names = []
     save = False
     new_counter = {}
-    for (top, right, bottom, left), name in zip(face_locations, face_names):
+    for (top, right, bottom, left), name, avg_eyes in zip(face_locations, face_names, raw_eyes):
         color = (0, 0, 255)
-        recogn, alive, blinked = check_face(name)
+        recogn, alive, blinked = check_face(name, avg_eyes)
         if recogn:
             save = True
             color = (230, 224, 76)
@@ -200,7 +217,7 @@ def process_ready_faces(frame, face_locations, face_names):
                 color = (255, 33, 170)
             if alive and (not blinked or global_vars.BLINKED_EYES_OPEN):
                 new_counter[name] = (global_vars.recognition_count[
-                                            name] if global_vars.recognition_count.__contains__(name) else 0) + 1
+                                         name] if global_vars.recognition_count.__contains__(name) else 0) + 1
                 if new_counter[name] >= global_vars.WAIT_FRAMES_FOR_DETECTION:
                     alive_names.append(name)
         else:

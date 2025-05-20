@@ -8,10 +8,10 @@ import face_recognition
 import mediapipe as mp
 
 import global_vars
-from face_recogition_logic import get_locations, process_eyes, recognition, analyze_eyes, process_ready_faces, \
-    clear_double_detection
+from face_recogition_logic import get_locations_and_eyes, recognition, process_ready_faces, \
+    clear_double_detection, get_locations_and_eyes
 from frame_handler import get_rgb_frame
-from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe_video, load_mediapipe_image
+from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe
 from google_form_saver import load_data_from_forms
 from saver import save_recognition
 
@@ -27,17 +27,16 @@ def process(frame):
     clear()
     rgb_frame = get_rgb_frame(frame)
 
-    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
+    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=get_rgb_frame(frame))
 
     timestamp_ms = int(time.time() * 1000)
 
-    results = global_vars.face_video_detector.detect_for_video(image, timestamp_ms)
-    face_locations = get_locations(results, frame)
+    # results = global_vars.face_video_detector.detect_for_video(image, timestamp_ms)
+    landmarkers = global_vars.landmarker.detect_for_video(image, timestamp_ms)
+    face_locations, raw_eyes = get_locations_and_eyes(landmarkers, frame)
+
     face_encodings = face_recognition.face_encodings(rgb_frame, face_locations,
                                                      model=global_vars.FACE_RECOGNITION_MODEL)
-
-    landmarkers = global_vars.landmarker.detect_for_video(image, timestamp_ms)
-    raw_eyes = process_eyes(landmarkers, frame)
 
     face_names = []
 
@@ -46,11 +45,9 @@ def process(frame):
 
         face_names.append(name)
 
-    analyze_eyes(raw_eyes, face_names, face_locations)
+    face_names, (face_encodings, face_locations, raw_eyes) = clear_double_detection(face_names, [face_encodings, face_locations, raw_eyes])
 
-    face_names, face_encodings, face_locations = clear_double_detection(face_names, face_encodings, face_locations)
-
-    alive_names, save = process_ready_faces(frame, face_locations, face_names)
+    alive_names, save = process_ready_faces(frame, face_locations, face_names, raw_eyes)
     if save:
         th = threading.Thread(target=save_recognition, args=('recogn', frame))
         th.start()
@@ -104,8 +101,7 @@ def write_arduino(x):
 
 
 def main():
-    load_mediapipe_video()
-    load_mediapipe_image()
+    load_mediapipe()
     load_googleapi()
     load_known_data()
     load_arduino()

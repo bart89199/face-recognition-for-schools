@@ -62,13 +62,13 @@ MIN_FRAMES_FOR_DETECTION = 15
 
 NEED_BLINKS = 1
 
-FRAMES_FOR_EYES_CHECK = 9
+FRAMES_FOR_EYES_CHECK = 7
 
 WAIT_FRAMES_FOR_DETECTION = 5
 
 
 
-CAM_PORT = '/dev/video2'
+CAM_PORT = '/dev/video0'
 ARDUINO_PORT = '/dev/ttyUSB0'
 
 KNOWN_FACES_FILE = "known_faces.pkl"
@@ -84,7 +84,7 @@ FACE_RECOGNITION_MODEL = "large"
 
 face_video_detector = None
 face_image_detector = None
-face_mesh = None
+landmarker_image = None
 landmarker = None
 arduino = None
 
@@ -104,8 +104,8 @@ last_forms_check_time = 0
 frames_counter = [0]
 
 # pixels scale
-FRAME_SCALE_HEIGHT = 1.2
-FRAME_SCALE_WIDTH = 1.1
+# FRAME_SCALE_HEIGHT = 1.2
+# FRAME_SCALE_WIDTH = 1.1
 
 MAX_FACES = 12
 

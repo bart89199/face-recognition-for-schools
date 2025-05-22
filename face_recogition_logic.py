@@ -150,15 +150,25 @@ def recognition(face_encoding):
 
 def clear_double_detection(face_names, face_metrics):
     already = []
+    delete = []
     for i in range(len(face_names) - 1, -1, -1):
         name = face_names[i]
         if name == global_vars.UNKNOWN_NAME:
             continue
         if already.__contains__(name):
+            delete.append(name)
+        already.append(name)
+
+
+    for i in range(len(face_names) - 1, -1, -1):
+        name = face_names[i]
+        if name == global_vars.UNKNOWN_NAME:
+            continue
+        if delete.__contains__(name):
             face_names.pop(i)
             for j in range(0, len(face_metrics)):
                 face_metrics[j].pop(i)
-        already.append(name)
+
     return face_names, face_metrics
 
 

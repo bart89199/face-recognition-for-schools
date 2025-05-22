@@ -13,7 +13,7 @@ import global_vars
 from face_recogition_logic import get_locations_and_eyes, recognition, process_ready_faces, \
     clear_double_detection, get_locations_and_eyes
 from frame_handler import get_rgb_frame
-from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe
+from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe, load_main
 from google_form_saver import load_data_from_forms
 from saver import save_recognition
 
@@ -105,6 +105,7 @@ def write_arduino(x):
 
 
 def main():
+    load_main()
     load_mediapipe()
     load_googleapi()
     load_known_data()

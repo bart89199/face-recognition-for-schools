@@ -11,7 +11,7 @@ from matplotlib.image import imread
 import frame_handler
 import global_vars
 from frame_handler import read_frame_file
-from loader import load_googleapi, load_known_data, load_mediapipe
+from loader import load_googleapi, load_known_data, load_mediapipe, load_main
 from saver import save_from_frame, save_data_on_disk, forget_face
 
 
@@ -83,6 +83,7 @@ def load_data_from_forms():
     global_vars.last_forms_check_time = cur_time
 
 def main_google_form_saver():
+    load_main()
     load_googleapi()
     load_known_data()
     load_mediapipe()

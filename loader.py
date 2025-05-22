@@ -8,6 +8,7 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision, BaseOptions
 from mediapipe.tasks.python.vision import FaceLandmarkerOptions, FaceLandmarker, RunningMode
+from pillow_heif import register_heif_opener
 
 import global_vars
 
@@ -76,3 +77,6 @@ def load_arduino():
         print("Arduino connected")
     else:
         print("Arduino off")
+
+def load_main():
+    register_heif_opener()

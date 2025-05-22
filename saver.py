@@ -13,7 +13,7 @@ from googleapiclient.http import MediaFileUpload
 
 import global_vars
 from frame_handler import get_rgb_frame, read_frame_file
-from loader import load_known_data, load_googleapi, load_mediapipe
+from loader import load_known_data, load_googleapi, load_mediapipe, load_main
 from face_recogition_logic import get_locations_and_eyes
 
 
@@ -125,8 +125,8 @@ def save_from_encoding(face_encoding, name, frame, filename, additional_info=Non
 
 def save_from_frame(frame, name: str, filename, additional_info=None):
     rgb_frame = get_rgb_frame(frame)
-    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
-    landmarkers = global_vars.landmarker_image.detect(get_rgb_frame(image))
+    image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+    landmarkers = global_vars.landmarker_image.detect(image)
     face_locations, _ = get_locations_and_eyes(landmarkers, frame)
     face_encodings = face_recognition.face_encodings(rgb_frame, face_locations,
                                                      model=global_vars.FACE_RECOGNITION_MODEL)
@@ -178,7 +178,7 @@ def autosave():
 
 def main_saver():
     from google_form_saver import get_forms_answers, forget_forms_response, load_data_from_forms, load_response
-
+    load_main()
     load_known_data()
     load_mediapipe()
     load_googleapi()

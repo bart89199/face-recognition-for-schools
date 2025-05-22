@@ -122,7 +122,7 @@ def check_encoding_avg(face_encoding):
 
 
 def check_encoding_percent(face_encoding):
-    mx = [0, 0]
+    mx = [0, 0, 0]
     for idx, known_faces in enumerate(global_vars.known_face_encodings):
         if len(known_faces) == 0:
             continue
@@ -132,10 +132,13 @@ def check_encoding_percent(face_encoding):
             if d <= global_vars.MAX_PERCENT_DISTANCE:
                 cnt += 1
         percent = cnt / len(known_faces)
+        avg = np.mean(distances)
         if mx[0] < percent and percent >= global_vars.MIN_MATCH_FOR_PERSON:
-            mx = [percent, idx]
+            mx = [percent, avg, idx]
+        if mx[0] == percent and percent >= global_vars.MIN_MATCH_FOR_PERSON and mx[1] > avg:
+            mx = [percent, avg, idx]
     name = global_vars.UNKNOWN_NAME
-    best_match_index = mx[1]
+    best_match_index = mx[2]
     if mx[0] != 0:
         name = global_vars.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
     return name

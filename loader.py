@@ -1,3 +1,4 @@
+import json
 import os
 import pickle
 
@@ -67,8 +68,11 @@ def load_known_data():
             global_vars.known_face_encodings, global_vars.known_face_names, global_vars.known_face_images = pickle.load(
                 f)
     if os.path.exists(global_vars.SAVED_FORM_ANSWERS_FILE):
-        with open(global_vars.SAVED_FORM_ANSWERS_FILE, "rb") as f:
-            global_vars.saved_form_answers = pickle.load(f)
+        with open(global_vars.SAVED_FORM_ANSWERS_FILE, "r") as f:
+            global_vars.saved_form_answers = json.load(f)
+    if os.path.exists(global_vars.BLOCKED_GOOGLE_FILES_FILE):
+        with open(global_vars.BLOCKED_GOOGLE_FILES_FILE, "r") as f:
+            global_vars.blocked_google_files = json.load(f)
 
 
 def load_arduino():

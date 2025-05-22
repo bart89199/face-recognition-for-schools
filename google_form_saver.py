@@ -63,11 +63,16 @@ def load_response(response, skip_if_contains = True, save_format = '0'):
     if save_format == '0' or save_format == '1':
         for answer in response['answers'][global_vars.FORM_ANSWER_ID]['fileUploadAnswers']['answers']:
             file_id = str(answer['fileId'])
+            if global_vars.blocked_google_files.__contains__(file_id):
+                print(f'[BLOCK] file {file_id} blocked(name - {name})')
+                continue
             file = export_file(file_id)
             if file is not None:
                 frame = read_frame_file(file)
                 save_from_frame(frame, name, f'{file_id}.jpg', f'file id = {file_id}, name = {name}')
-            file.close()
+                file.close()
+            else:
+                print(f'[WARNING] Problems with file {file_id} from {name}')
 
     save_data_on_disk()
 

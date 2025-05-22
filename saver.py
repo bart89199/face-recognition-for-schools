@@ -1,3 +1,4 @@
+import json
 import os.path
 import pickle
 import time
@@ -63,8 +64,10 @@ def save_recognition(name, frame):
 def save_data_on_disk():
     with open(global_vars.KNOWN_FACES_FILE, "wb") as f:
         pickle.dump((global_vars.known_face_encodings, global_vars.known_face_names, global_vars.known_face_images), f)
-    with open(global_vars.SAVED_FORM_ANSWERS_FILE, "wb") as f:
-        pickle.dump(global_vars.saved_form_answers, f)
+    with open(global_vars.SAVED_FORM_ANSWERS_FILE, "w") as f:
+        json.dump(global_vars.saved_form_answers, f)
+    with open(global_vars.BLOCKED_GOOGLE_FILES_FILE, "w") as f:
+        json.dump(global_vars.blocked_google_files, f)
 
 
 def forget_face(name, j):

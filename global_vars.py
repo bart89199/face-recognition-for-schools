@@ -76,7 +76,8 @@ CAM_PORT = '/dev/video0'
 ARDUINO_PORT = '/dev/ttyUSB0'
 
 KNOWN_FACES_FILE = "known_faces.pkl"
-SAVED_FORM_ANSWERS_FILE = "saved_form_answers.pkl"
+SAVED_FORM_ANSWERS_FILE = "saved_form_answers.json"
+BLOCKED_GOOGLE_FILES_FILE = "blocked_google_files.json"
 UNKNOWN_NAME = "unknown"
 WINDOW_NAME = "Face Recognition"
 
@@ -99,6 +100,7 @@ known_face_encodings = []
 known_face_images = []
 known_face_names = []
 saved_form_answers = []
+blocked_google_files = []
 eyes = [{}] * LAST_FRAMES_AMOUNT
 recognition_count = {}
 

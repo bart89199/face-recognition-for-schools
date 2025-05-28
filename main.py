@@ -3,6 +3,7 @@ import threading
 
 import time
 import uuid
+from time import sleep
 
 import cv2
 import face_recognition
@@ -13,7 +14,7 @@ import global_vars
 from face_recogition_logic import get_locations_and_eyes, recognition, process_ready_faces, \
     clear_double_detection, get_locations_and_eyes
 from frame_handler import get_rgb_frame
-from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe, load_main
+from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe, load_stuff
 from google_form_saver import load_data_from_forms
 from saver import save_recognition
 
@@ -25,7 +26,6 @@ def clear():
 
 
 def process(frame):
-    global_vars.iteration += 1
     clear()
     rgb_frame = get_rgb_frame(frame)
 
@@ -105,7 +105,7 @@ def write_arduino(x):
 
 
 def main():
-    load_main()
+    load_stuff()
     load_mediapipe()
     load_googleapi()
     load_known_data()
@@ -130,8 +130,9 @@ def main():
         ret, frame = cap.read()
         if not ret:
             print("Something went wrong with camera")
-            break
-        process(frame)
+            sleep(1)
+        else:
+            process(frame)
         if key == ord('q'):
             break
 

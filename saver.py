@@ -11,10 +11,11 @@ import face_recognition
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
+from httplib2 import ServerNotFoundError
 
 import global_vars
 from frame_handler import get_rgb_frame, read_frame_file
-from loader import load_known_data, load_googleapi, load_mediapipe, load_main
+from loader import load_known_data, load_googleapi, load_mediapipe, load_stuff
 from face_recogition_logic import get_locations_and_eyes
 
 
@@ -56,6 +57,8 @@ def save_recognition(name, frame):
 
             except HttpError as error:
                 print(f"An error occurred: {error}")
+            except ServerNotFoundError as error:
+                print(f"[ERROR] Problems with internet connection: {error}")
 
         else:
             print(f"[ERROR] Не удалось сохранить изображение в {filename}")
@@ -181,7 +184,7 @@ def autosave():
 
 def main_saver():
     from google_form_saver import get_forms_answers, forget_forms_response, load_data_from_forms, load_response
-    load_main()
+    load_stuff()
     load_known_data()
     load_mediapipe()
     load_googleapi()

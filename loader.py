@@ -7,9 +7,10 @@ from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from mediapipe.tasks import python
-from mediapipe.tasks.python import vision, BaseOptions
+from mediapipe.tasks.python import BaseOptions
 from mediapipe.tasks.python.vision import FaceLandmarkerOptions, FaceLandmarker, RunningMode
 from pillow_heif import register_heif_opener
+from serial.serialutil import SerialException
 
 import global_vars
 
@@ -77,10 +78,14 @@ def load_known_data():
 
 def load_arduino():
     if global_vars.USE_ARDUINO:
-        global_vars.arduino = serial.Serial(port=global_vars.ARDUINO_PORT, baudrate=115200, timeout=.1)
-        print("Arduino connected")
+        try:
+            global_vars.arduino = serial.Serial(port=global_vars.ARDUINO_PORT, baudrate=115200, timeout=.1)
+            print("Arduino connected")
+        except SerialException as e:
+            global_vars.USE_ARDUINO = False
+            print(f"[ERROR] Arduino off because {e}")
     else:
         print("Arduino off")
 
-def load_main():
+def load_stuff():
     register_heif_opener()

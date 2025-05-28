@@ -6,12 +6,13 @@ import cv2
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from httplib2 import ServerNotFoundError
 from matplotlib.image import imread
 
 import frame_handler
 import global_vars
 from frame_handler import read_frame_file
-from loader import load_googleapi, load_known_data, load_mediapipe, load_main
+from loader import load_googleapi, load_known_data, load_mediapipe, load_stuff
 from saver import save_from_frame, save_data_on_disk, forget_face
 
 
@@ -31,11 +32,16 @@ def export_file(file_id):
     return file
 
 def get_forms_answers():
-    forms_service = build("forms", "v1", credentials=global_vars.creds)
+    try:
+        forms_service = build("forms", "v1", credentials=global_vars.creds)
 
-    responses = forms_service.forms().responses().list(formId=global_vars.GOOGLE_FORM_ID).execute()
-    forms_service.close()
-    return responses
+        responses = forms_service.forms().responses().list(formId=global_vars.GOOGLE_FORM_ID).execute()
+        forms_service.close()
+        return responses
+    except ServerNotFoundError as e:
+        print(f"[ERROR] Problems with internet connection: {e}")
+        return {'responses': []}
+
 
 def forget_forms_response(response, delete_format = '0'):
     if delete_format == '0' or delete_format == '2':
@@ -88,7 +94,7 @@ def load_data_from_forms():
     global_vars.last_forms_check_time = cur_time
 
 def main_google_form_saver():
-    load_main()
+    load_stuff()
     load_googleapi()
     load_known_data()
     load_mediapipe()

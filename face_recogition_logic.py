@@ -8,7 +8,7 @@ import numpy as np
 from mediapipe.tasks.python.components.containers import DetectionResult
 from mediapipe.tasks.python.vision import FaceLandmarkerResult
 
-import global_vars
+import settings
 
 
 def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
@@ -32,8 +32,8 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
 #
 #     raw_eyes = []
 #     for landmarks in result.face_landmarks:
-#         left_eye = eye_aspect_ratio(landmarks, global_vars.LEFT_EYE, w, h)
-#         right_eye = eye_aspect_ratio(landmarks, global_vars.RIGHT_EYE, w, h)
+#         left_eye = eye_aspect_ratio(landmarks, settings.LEFT_EYE, w, h)
+#         right_eye = eye_aspect_ratio(landmarks, settings.RIGHT_EYE, w, h)
 #         avg_ear = (left_eye + right_eye) / 2.0
 #
 #         pos_x = 0
@@ -59,8 +59,8 @@ def eye_aspect_ratio(landmarks, eye_indices, img_width, img_height):
 #             mid_x = bbox.origin_x + bbox.width // 2
 #             mid_y = bbox.origin_y + bbox.height // 2
 #
-#             nh = (bbox.height * global_vars.FRAME_SCALE_HEIGHT) // 2
-#             nw = (bbox.width * global_vars.FRAME_SCALE_WIDTH) // 2
+#             nh = (bbox.height * settings.FRAME_SCALE_HEIGHT) // 2
+#             nw = (bbox.width * settings.FRAME_SCALE_WIDTH) // 2
 #
 #             left = int(mid_x - nw)
 #             top = int(mid_y - nh)
@@ -80,8 +80,8 @@ def get_locations_and_eyes(results: FaceLandmarkerResult, frame):
     face_locations = []
     raw_eyes = []
     for landmarks in results.face_landmarks:
-        left_eye = eye_aspect_ratio(landmarks, global_vars.LEFT_EYE, w, h)
-        right_eye = eye_aspect_ratio(landmarks, global_vars.RIGHT_EYE, w, h)
+        left_eye = eye_aspect_ratio(landmarks, settings.LEFT_EYE, w, h)
+        right_eye = eye_aspect_ratio(landmarks, settings.RIGHT_EYE, w, h)
         avg_eyes = (left_eye + right_eye) / 2.0
         raw_eyes.append(avg_eyes)
         left = 1e9
@@ -107,45 +107,45 @@ def get_locations_and_eyes(results: FaceLandmarkerResult, frame):
 
 def check_encoding_avg(face_encoding):
     mx = [0, 0]
-    for idx, known_faces in enumerate(global_vars.known_face_encodings):
+    for idx, known_faces in enumerate(settings.known_face_encodings):
         if len(known_faces) == 0:
             continue
         distances = face_recognition.face_distance(known_faces, face_encoding)
         avg = np.mean(distances)
-        if global_vars.MAX_AVG_DISTANCE >= avg > mx[0]:
+        if settings.MAX_AVG_DISTANCE >= avg > mx[0]:
             mx = [avg, idx]
-    name = global_vars.UNKNOWN_NAME
+    name = settings.UNKNOWN_NAME
     best_match_index = mx[1]
     if mx[0] != 0:
-        name = global_vars.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
+        name = settings.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
     return name
 
 
 def check_encoding_percent(face_encoding):
     mx = [0, 0, 0]
-    for idx, known_faces in enumerate(global_vars.known_face_encodings):
+    for idx, known_faces in enumerate(settings.known_face_encodings):
         if len(known_faces) == 0:
             continue
         distances = face_recognition.face_distance(known_faces, face_encoding)
         cnt = 0
         for d in distances:
-            if d <= global_vars.MAX_PERCENT_DISTANCE:
+            if d <= settings.MAX_PERCENT_DISTANCE:
                 cnt += 1
         percent = cnt / len(known_faces)
         avg = np.mean(distances)
-        if mx[0] < percent and percent >= global_vars.MIN_MATCH_FOR_PERSON:
+        if mx[0] < percent and percent >= settings.MIN_MATCH_FOR_PERSON:
             mx = [percent, avg, idx]
-        if mx[0] == percent and percent >= global_vars.MIN_MATCH_FOR_PERSON and mx[1] > avg:
+        if mx[0] == percent and percent >= settings.MIN_MATCH_FOR_PERSON and mx[1] > avg:
             mx = [percent, avg, idx]
-    name = global_vars.UNKNOWN_NAME
+    name = settings.UNKNOWN_NAME
     best_match_index = mx[2]
     if mx[0] != 0:
-        name = global_vars.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
+        name = settings.known_face_names[best_match_index] + "(" + str(mx[0]) + ")"
     return name
 
 
 def recognition(face_encoding):
-    if global_vars.FACE_DETECTION_MODE == 1:
+    if settings.FACE_DETECTION_MODE == 1:
         return check_encoding_avg(face_encoding)
     else:
         return check_encoding_percent(face_encoding)
@@ -156,7 +156,7 @@ def clear_double_detection(face_names, face_metrics):
     delete = []
     for i in range(len(face_names) - 1, -1, -1):
         name = face_names[i]
-        if name == global_vars.UNKNOWN_NAME:
+        if name == settings.UNKNOWN_NAME:
             continue
         if already.__contains__(name):
             delete.append(name)
@@ -165,7 +165,7 @@ def clear_double_detection(face_names, face_metrics):
 
     for i in range(len(face_names) - 1, -1, -1):
         name = face_names[i]
-        if name == global_vars.UNKNOWN_NAME:
+        if name == settings.UNKNOWN_NAME:
             continue
         if delete.__contains__(name):
             face_names.pop(i)
@@ -178,30 +178,30 @@ def clear_double_detection(face_names, face_metrics):
 
 
 def check_face(name, avg):
-    if name == global_vars.UNKNOWN_NAME:
+    if name == settings.UNKNOWN_NAME:
         return False, False, False
     difs = 0
     cnt = 0
     blinks = 0
     detect_cnt = 0
-    for i in range(1, global_vars.LAST_FRAMES_AMOUNT):
-        if not global_vars.eyes[i].__contains__(name):
+    for i in range(1, settings.LAST_FRAMES_AMOUNT):
+        if not settings.eyes[i].__contains__(name):
             break
         detect_cnt += 1
 
-    for i in range(1, global_vars.FRAMES_FOR_EYES_CHECK):
-        if not global_vars.eyes[i].__contains__(name):
+    for i in range(1, settings.FRAMES_FOR_EYES_CHECK):
+        if not settings.eyes[i].__contains__(name):
             break
         cnt += 1
-        avgd, bls = global_vars.eyes[i][name]
+        avgd, bls = settings.eyes[i][name]
         blinks += bls
         dif = abs(avg - avgd)
-        if dif >= global_vars.MIN_EYES_DIFFERENCE:
+        if dif >= settings.MIN_EYES_DIFFERENCE:
             difs += 1
-    blinked = cnt > 0 and (difs / cnt) > global_vars.MIN_DIFS_FOR_BLICK
+    blinked = cnt > 0 and (difs / cnt) > settings.MIN_DIF_FOR_BLICK
     blinks += blinked
-    global_vars.eyes[0][name] = (avg, blinked)
-    return detect_cnt >= global_vars.MIN_FRAMES_FOR_DETECTION, blinks >= global_vars.NEED_BLINKS, avg <= global_vars.CLOSE_EYES_THRESHOLD
+    settings.eyes[0][name] = (avg, blinked)
+    return detect_cnt >= settings.MIN_FRAMES_FOR_DETECTION, blinks >= settings.NEED_BLINKS, avg <= settings.CLOSE_EYES_THRESHOLD
 
 
 # class Recognition_status(Enum):
@@ -228,18 +228,18 @@ def process_ready_faces(frame, face_locations, face_names, raw_eyes):
                 color = (0, 255, 0)
             if blinked:
                 color = (255, 33, 170)
-            if alive and (not blinked or global_vars.BLINKED_EYES_OPEN):
-                new_counter[name] = (global_vars.recognition_count[
-                                         name] if global_vars.recognition_count.__contains__(name) else 0) + 1
-                if new_counter[name] >= global_vars.WAIT_FRAMES_FOR_DETECTION:
+            if alive and (not blinked or settings.BLINKED_EYES_OPEN):
+                new_counter[name] = (settings.recognition_count[
+                                         name] if settings.recognition_count.__contains__(name) else 0) + 1
+                if new_counter[name] >= settings.WAIT_FRAMES_FOR_DETECTION:
                     alive_names.append(name)
         else:
-            if name != global_vars.UNKNOWN_NAME:
+            if name != settings.UNKNOWN_NAME:
                 color = (80, 127, 255)
         cv2.rectangle(frame, (left, top), (right, bottom), color, 2)
         cv2.rectangle(frame, (left, bottom - 30), (right, bottom), color, cv2.FILLED)
         cv2.putText(frame, name, (left + 5, bottom - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
 
-    global_vars.recognition_count = new_counter
+    settings.recognition_count = new_counter
     return alive_names, save

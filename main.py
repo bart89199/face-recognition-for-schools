@@ -1,31 +1,35 @@
+import asyncio
 import os.path
 import threading
-
 import time
-import uuid
+from datetime import datetime
 
 import cv2
 import face_recognition
-
 import mediapipe as mp
+from serial.serialutil import SerialException
 
-import global_vars
-from face_recogition_logic import get_locations_and_eyes, recognition, process_ready_faces, \
+import door
+import kotlin_connection
+import load_settings
+import settings
+import streaming
+from face_recogition_logic import recognition, process_ready_faces, \
     clear_double_detection, get_locations_and_eyes
 from frame_handler import get_rgb_frame
-from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe, load_main
 from google_form_saver import load_data_from_forms
+from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe, load_main
 from saver import save_recognition
 
 
 def clear():
-    global_vars.eyes = [{}] + global_vars.eyes[:-1]
-    global_vars.eyes_ready = False
-    global_vars.raw_eyes = []
+    settings.eyes = [{}] + settings.eyes[:-1]
+    settings.eyes_ready = False
+    settings.raw_eyes = []
 
 
 def process(frame):
-    global_vars.iteration += 1
+    settings.iteration += 1
     clear()
     rgb_frame = get_rgb_frame(frame)
 
@@ -33,12 +37,12 @@ def process(frame):
 
     timestamp_ms = int(time.time() * 1000)
 
-    # results = global_vars.face_video_detector.detect_for_video(image, timestamp_ms)
-    landmarkers = global_vars.landmarker.detect_for_video(image, timestamp_ms)
+    # results = settings.face_video_detector.detect_for_video(image, timestamp_ms)
+    landmarkers = settings.landmarker.detect_for_video(image, timestamp_ms)
     face_locations, raw_eyes = get_locations_and_eyes(landmarkers, frame)
 
     face_encodings = face_recognition.face_encodings(rgb_frame, face_locations,
-                                                     model=global_vars.FACE_RECOGNITION_MODEL)
+                                                     model=settings.FACE_RECOGNITION_MODEL)
 
     face_names = []
 
@@ -58,89 +62,131 @@ def process(frame):
         th.start()
 
     if len(alive_names) > 0:
-        global_vars.last_blink_time = time.time()
-    if time.time() - global_vars.last_blink_time < global_vars.CLOSE_DELAY:
-        open_door()
+        settings.last_blink_time = time.time()
+
+
+    if time.time() - settings.last_blink_time < settings.CLOSE_DELAY_MS / 1000:
+        settings.door_status = True
         cv2.putText(frame, "People Allowed", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     else:
-        close_door()
+        settings.door_status = False
         cv2.putText(frame, "People Not Detected", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
     cur_time = time.time()
 
-    if global_vars.FORMS_AUTOLOAD and cur_time - global_vars.last_forms_check_time >= global_vars.FORMS_CHECK_INTERVAL:
+    if settings.CONNECT_KOTLIN:
+        java_server.send_data(settings.door_status, alive_names)
+
+    if settings.door_status:
+        open_door()
+    else:
+        close_door()
+
+    if settings.FORMS_AUTOLOAD and cur_time - settings.last_forms_check_time >= settings.FORMS_CHECK_INTERVAL_MS / 1000:
         th = threading.Thread(target=load_data_from_forms)
         th.start()
-        global_vars.last_forms_check_time = 1e18
+        settings.last_forms_check_time = 1e18
 
-    while len(global_vars.frames_counter) > 1 and (cur_time - global_vars.frames_counter[0]) > 1:
-        global_vars.frames_counter.pop(0)
-    global_vars.frames_counter.append(cur_time)
+    while len(settings.frames_counter) > 1 and (cur_time - settings.frames_counter[0]) > 1:
+        settings.frames_counter.pop(0)
+    settings.frames_counter.append(cur_time)
 
-    fps = len(global_vars.frames_counter) / (cur_time - global_vars.frames_counter[0])
+    fps = len(settings.frames_counter) / (cur_time - settings.frames_counter[0])
 
     cv2.putText(frame, "fps: " + str(int(fps)), (500, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-    global_vars.last_frame_time = cur_time
-    if global_vars.RECORD_VIDEO:
-        global_vars.out_video.write(frame)
-    cv2.imshow(global_vars.WINDOW_NAME, frame)
-    return face_encodings
+    settings.last_frame_time = cur_time
+    if settings.RECORD_VIDEO:
+        settings.out_video.write(frame)
+    cv2.imshow(settings.WINDOW_NAME, frame)
+
+    return frame
 
 
 def open_door():
-    if global_vars.USE_ARDUINO:
+    if settings.USE_ARDUINO:
         write_arduino(1)
 
 
 def close_door():
-    if global_vars.USE_ARDUINO:
+    if settings.USE_ARDUINO:
         write_arduino(0)
 
 
 def write_arduino(x):
-    global_vars.arduino.write(bytes(str(x), 'utf-8'))
+    if not door.arduino_loaded:
+        load_arduino()
+
+    try:
+        if settings.cur_arduino != x:
+            door.arduino.write(bytes(str(x), 'utf-8'))
+            settings.cur_arduino = x
+    except SerialException as e:
+        print("Can't connect arduino " + str(e))
+        load_arduino()
 
 
-def main():
+async def start_system():
+    load_settings.load()
+
+    if settings.USE_ARDUINO:
+        load_arduino()
+
     load_main()
     load_mediapipe()
     load_googleapi()
     load_known_data()
-    load_arduino()
 
     print("Starting video")
-    cap = cv2.VideoCapture(global_vars.CAM_PORT)
+    cap = cv2.VideoCapture(settings.CAM_PORT)
+    cap.set(cv2.CAP_PROP_FPS, settings.VIDEO_FPS)
     print("Video started")
-    cv2.namedWindow(global_vars.WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.namedWindow(settings.WINDOW_NAME, cv2.WINDOW_NORMAL)
 
-    if global_vars.RECORD_VIDEO:
-        name = f'{uuid.uuid4()}.avi'
-        os.makedirs(global_vars.VIDEOS_FOLDER, exist_ok=True)
-        filepath = os.path.join(global_vars.VIDEOS_FOLDER, name)
+    if settings.RECORD_VIDEO:
+        name = f'{datetime.now().strftime("%Y.%m.%d %H:%M:%S")}.avi'
+        os.makedirs(settings.VIDEOS_FOLDER, exist_ok=True)
+        filepath = os.path.join(settings.VIDEOS_FOLDER, name)
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        global_vars.out_video = cv2.VideoWriter(filepath, 0x44495658, global_vars.VIDEO_FPS, (frame_width, frame_height))
+        settings.out_video = cv2.VideoWriter(filepath, 0x44495658, settings.VIDEO_FPS, (frame_width, frame_height))
 
     print("[INFO] 'q' чтобы выйти.")
     while True:
+        if time.time() - settings.last_settings_load >= 30.0:
+            load_settings.load()
+            settings.last_settings_load = time.time()
+
         key = cv2.waitKey(1)
         ret, frame = cap.read()
         if not ret:
             print("Something went wrong with camera")
             break
-        process(frame)
+        frame = process(frame)
+        await settings.frame_queue.put(frame)
+        await asyncio.sleep(0)
         if key == ord('q'):
             break
 
+    settings.stream_is_run = False
+    settings.frame_queue.task_done()
     cap.release()
     cv2.destroyAllWindows()
     close_door()
-    if global_vars.RECORD_VIDEO:
-        global_vars.out_video.release()
+    if settings.RECORD_VIDEO:
+        settings.out_video.release()
+
+async def main():
+
+    ff_task = asyncio.create_task(streaming.start_ffmpeg_writer())
+    main_task = asyncio.create_task(start_system())
+    try:
+        await asyncio.gather(main_task, ff_task)
+    except asyncio.CancelledError:
+        pass
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

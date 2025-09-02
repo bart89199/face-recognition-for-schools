@@ -45,16 +45,24 @@
 # global OLD_FRAMES_FOLDER
 # global ARDUINO_PORT
 # global CLOSE_DELAY
+import asyncio
+import os
 
-CLOSE_DELAY = 3
+CLOSE_DELAY_MS = 3000
 SAVE_DETECTION_STATUS = True
 USE_ARDUINO = True
 FORMS_AUTOLOAD = True
 RECORD_VIDEO = True
-VIDEO_FPS = 30.0
 
+HLS_DIR = '/home/danil/testweb/hls'
+PLAYLIST = 'stream.m3u8'
+VIDEO_HEIGHT = 480
+VIDEO_WIDTH = 640
+VIDEO_FPS = 15
 
-FORMS_CHECK_INTERVAL = 10
+frame_queue = asyncio.Queue(10)
+
+FORMS_CHECK_INTERVAL_MS = 10_000
 
 
 #-----------FRAMES------------
@@ -66,14 +74,13 @@ MIN_FRAMES_FOR_DETECTION = 15
 
 NEED_BLINKS = 1
 
-FRAMES_FOR_EYES_CHECK = 7
+FRAMES_FOR_EYES_CHECK = 9
 
 WAIT_FRAMES_FOR_DETECTION = 5
 
 
 
-CAM_PORT = '/dev/video0'
-ARDUINO_PORT = '/dev/ttyUSB0'
+CAM_PORT = '/dev/video2'
 
 KNOWN_FACES_FILE = "known_faces.pkl"
 SAVED_FORM_ANSWERS_FILE = "saved_form_answers.json"
@@ -84,7 +91,7 @@ WINDOW_NAME = "Face Recognition"
 NEW_FRAMES_FOLDER = "new_frames"
 OLD_FRAMES_FOLDER = "old_frames"
 SAVED_FRAMES_FOLDER = "saved_faces"
-VIDEOS_FOLDER = "videos"
+VIDEOS_FOLDER = "/home/danil/testweb/records"
 
 FACE_RECOGNITION_MODEL = "large"
 
@@ -92,8 +99,12 @@ face_video_detector = None
 face_image_detector = None
 landmarker_image = None
 landmarker = None
-arduino = None
 out_video = None
+
+stream_is_run = True
+
+CONNECT_KOTLIN = True
+KTOR_AUTH_TOKEN = os.getenv("PY_TOKEN")
 
 
 known_face_encodings = []
@@ -104,8 +115,11 @@ blocked_google_files = []
 eyes = [{}] * LAST_FRAMES_AMOUNT
 recognition_count = {}
 
+KTOR_STATUS_URL = "http://0.0.0.0:8080/api/py/status"
 
+door_status = False
 
+cur_arduino = -1
 
 last_blink_time = 0
 last_forms_check_time = 0
@@ -133,7 +147,7 @@ MIN_MATCH_FOR_PERSON = 0.34
 
 TEMP_PATH = "tmp"
 last_saved_time = {}
-SAVE_DELAY = 5
+SAVE_DELAY_MS = 5_000
 GOOGLE_DRIVE_FOLDER_ID = "1i-DoUmzkX9USiMLOOCeXjog52rma7RPW"
 GOOGLE_FORM_ID = "1xfl6lFFMeqXw-B9e1Eqa4MkxE4Gmv-qaBBRTTd2ozvM"
 FORM_ANSWER_ID = '7d1f44f4'
@@ -144,20 +158,17 @@ creds = None
 
 # ----------------EYES----------------
 MIN_EYES_DIFFERENCE = 0.15
-MIN_DIFS_FOR_BLICK = 0.3
+MIN_DIF_FOR_BLICK = 0.3
 
 BLINKED_EYES_OPEN = False
 
 # MAX VALUE FOR CLOSED EYE
 CLOSE_EYES_THRESHOLD = 0.2
 
-# top, left, right, bottom faces frame scale for eyes owner finding
-FRAME_FOR_EYES_SCALE = 0.5
-
 # Eyes points for mediapipe
 RIGHT_EYE = [33, 160, 158, 133, 153, 144]
 LEFT_EYE = [362, 385, 387, 263, 373, 380]
 
-
+last_settings_load = 0
 
 iteration = 0

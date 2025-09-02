@@ -9,7 +9,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from matplotlib.image import imread
 
 import frame_handler
-import global_vars
+import settings
 from frame_handler import read_frame_file
 from loader import load_googleapi, load_known_data, load_mediapipe, load_main
 from saver import save_from_frame, save_data_on_disk, forget_face
@@ -17,7 +17,7 @@ from saver import save_from_frame, save_data_on_disk, forget_face
 
 def export_file(file_id):
     try:
-        drive_service = build("drive", "v3", credentials=global_vars.creds)
+        drive_service = build("drive", "v3", credentials=settings.creds)
         request = drive_service.files().get_media(fileId=file_id)
         file = io.BytesIO()
         downloader = MediaIoBaseDownload(file, request)
@@ -31,39 +31,39 @@ def export_file(file_id):
     return file
 
 def get_forms_answers():
-    forms_service = build("forms", "v1", credentials=global_vars.creds)
+    forms_service = build("forms", "v1", credentials=settings.creds)
 
-    responses = forms_service.forms().responses().list(formId=global_vars.GOOGLE_FORM_ID).execute()
+    responses = forms_service.forms().responses().list(formId=settings.GOOGLE_FORM_ID).execute()
     forms_service.close()
     return responses
 
 def forget_forms_response(response, delete_format = '0'):
     if delete_format == '0' or delete_format == '2':
-        global_vars.saved_form_answers.remove(response['responseId'])
+        settings.saved_form_answers.remove(response['responseId'])
     if delete_format == '0' or delete_format == '1':
-        name = response['respondentEmail'].replace(global_vars.EMAIL_DOMAIN, '')
-        for answer in response['answers'][global_vars.FORM_ANSWER_ID]['fileUploadAnswers']['answers']:
+        name = response['respondentEmail'].replace(settings.EMAIL_DOMAIN, '')
+        for answer in response['answers'][settings.FORM_ANSWER_ID]['fileUploadAnswers']['answers']:
             file_id = str(answer['fileId'])
-            filepath = os.path.join(global_vars.SAVED_FRAMES_FOLDER, name)
+            filepath = os.path.join(settings.SAVED_FRAMES_FOLDER, name)
             filepath = os.path.join(filepath, f'{file_id}.jpg')
-            i = global_vars.known_face_names.index(name)
-            j = global_vars.known_face_images[i].index(filepath)
+            i = settings.known_face_names.index(name)
+            j = settings.known_face_images[i].index(filepath)
             forget_face(name, j)
     save_data_on_disk()
 
 def load_response(response, skip_if_contains = True, save_format = '0'):
     response_id = response['responseId']
-    if global_vars.saved_form_answers.__contains__(response_id) and skip_if_contains:
+    if settings.saved_form_answers.__contains__(response_id) and skip_if_contains:
         return
-    name = response['respondentEmail'].replace(global_vars.EMAIL_DOMAIN, '')
+    name = response['respondentEmail'].replace(settings.EMAIL_DOMAIN, '')
 
     if save_format == '0' or save_format == '2':
-        global_vars.saved_form_answers.append(response_id)
+        settings.saved_form_answers.append(response_id)
 
     if save_format == '0' or save_format == '1':
-        for answer in response['answers'][global_vars.FORM_ANSWER_ID]['fileUploadAnswers']['answers']:
+        for answer in response['answers'][settings.FORM_ANSWER_ID]['fileUploadAnswers']['answers']:
             file_id = str(answer['fileId'])
-            if global_vars.blocked_google_files.__contains__(file_id):
+            if settings.blocked_google_files.__contains__(file_id):
                 print(f'[BLOCK] file {file_id} blocked(name - {name})')
                 continue
             file = export_file(file_id)
@@ -85,7 +85,7 @@ def load_data_from_forms():
         load_response(response)
     print("Forms checked.")
     cur_time = time.time()
-    global_vars.last_forms_check_time = cur_time
+    settings.last_forms_check_time = cur_time
 
 def main_google_form_saver():
     load_main()

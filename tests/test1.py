@@ -2,7 +2,7 @@ import time
 
 import cv2
 
-import global_vars
+import settings
 
 print("Starting video")
 cap = cv2.VideoCapture('/dev/video0')

@@ -12,7 +12,6 @@ from mediapipe.tasks.python.vision import FaceLandmarkerOptions, FaceLandmarker,
 from pillow_heif import register_heif_opener
 from serial.serialutil import SerialException
 
-import door
 import settings
 
 
@@ -76,24 +75,6 @@ def load_known_data():
         with open(settings.BLOCKED_GOOGLE_FILES_FILE, "r") as f:
             settings.blocked_google_files = json.load(f)
 
-
-def load_arduino():
-    if settings.USE_ARDUINO:
-        try:
-            settings.cur_arduino = -1
-            door.arduino_loaded = True
-            door.arduino = serial.Serial(port=door.ARDUINO_PORT0 + '0', baudrate=115200, timeout=.1)
-            print("Arduino connected")
-        except SerialException:
-            try:
-                door.arduino_loaded = True
-                door.arduino = serial.Serial(port=door.ARDUINO_PORT0 + '1', baudrate=115200, timeout=.1)
-                print("Arduino connected")
-            except SerialException as e:
-                print("Exception during connection arduino " + str(e))
-                door.arduino_loaded = False
-    else:
-        print("Arduino off")
 
 def load_main():
     register_heif_opener()

@@ -1,5 +1,3 @@
-from typing import IO
-
 import cv2
 from PIL import Image, ExifTags
 import numpy as np

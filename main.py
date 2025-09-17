@@ -7,9 +7,8 @@ from datetime import datetime
 import cv2
 import face_recognition
 import mediapipe as mp
-from serial.serialutil import SerialException
+import numpy as np
 
-import door
 import kotlin_connection
 import load_settings
 import settings
@@ -18,8 +17,8 @@ from face_recogition_logic import recognition, process_ready_faces, \
     clear_double_detection, get_locations_and_eyes
 from frame_handler import get_rgb_frame
 from google_form_saver import load_data_from_forms
-from loader import load_googleapi, load_known_data, load_arduino, load_mediapipe, load_main
-from saver import save_recognition
+from loader import load_googleapi, load_known_data, load_mediapipe, load_main
+from settings import SystemStatus
 
 
 def clear():
@@ -54,35 +53,28 @@ def process(frame):
     face_names, (face_encodings, face_locations, raw_eyes) = clear_double_detection(face_names, [face_encodings, face_locations, raw_eyes])
 
     alive_names, save = process_ready_faces(frame, face_locations, face_names, raw_eyes)
-    if save:
-        th = threading.Thread(target=save_recognition, args=('recogn', frame))
-        th.start()
-    for name in alive_names:
-        th = threading.Thread(target=save_recognition, args=(name, frame))
-        th.start()
+    # if save:
+    #     th = threading.Thread(target=save_recognition, args=('recogn', frame))
+    #     th.start()
+    # for name in alive_names:
+    #     th = threading.Thread(target=save_recognition, args=(name, frame))
+    #     th.start()
 
+    for name in alive_names:
+        settings.cur_alive_names.add(name)
     if len(alive_names) > 0:
         settings.last_blink_time = time.time()
 
-
     if time.time() - settings.last_blink_time < settings.CLOSE_DELAY_MS / 1000:
-        settings.door_status = True
+        settings.door_opened = True
         cv2.putText(frame, "People Allowed", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 255, 0), 2)
     else:
-        settings.door_status = False
+        settings.door_opened = False
         cv2.putText(frame, "People Not Detected", (20, 40),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
 
     cur_time = time.time()
-
-    if settings.CONNECT_KOTLIN:
-        java_server.send_data(settings.door_status, alive_names)
-
-    if settings.door_status:
-        open_door()
-    else:
-        close_door()
 
     if settings.FORMS_AUTOLOAD and cur_time - settings.last_forms_check_time >= settings.FORMS_CHECK_INTERVAL_MS / 1000:
         th = threading.Thread(target=load_data_from_forms)
@@ -98,41 +90,12 @@ def process(frame):
     cv2.putText(frame, "fps: " + str(int(fps)), (500, 40),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     settings.last_frame_time = cur_time
-    if settings.RECORD_VIDEO:
-        settings.out_video.write(frame)
-    cv2.imshow(settings.WINDOW_NAME, frame)
 
     return frame
 
 
-def open_door():
-    if settings.USE_ARDUINO:
-        write_arduino(1)
-
-
-def close_door():
-    if settings.USE_ARDUINO:
-        write_arduino(0)
-
-
-def write_arduino(x):
-    if not door.arduino_loaded:
-        load_arduino()
-
-    try:
-        if settings.cur_arduino != x:
-            door.arduino.write(bytes(str(x), 'utf-8'))
-            settings.cur_arduino = x
-    except SerialException as e:
-        print("Can't connect arduino " + str(e))
-        load_arduino()
-
-
 async def start_system():
     load_settings.load()
-
-    if settings.USE_ARDUINO:
-        load_arduino()
 
     load_main()
     load_mediapipe()
@@ -153,7 +116,9 @@ async def start_system():
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         settings.out_video = cv2.VideoWriter(filepath, 0x44495658, settings.VIDEO_FPS, (frame_width, frame_height))
 
+    await asyncio.sleep(3)
     print("[INFO] 'q' чтобы выйти.")
+    settings.system_status = SystemStatus.RUNNING
     while True:
         if time.time() - settings.last_settings_load >= 30.0:
             load_settings.load()
@@ -163,27 +128,42 @@ async def start_system():
         ret, frame = cap.read()
         if not ret:
             print("Something went wrong with camera")
-            break
-        frame = process(frame)
-        await settings.frame_queue.put(frame)
-        await asyncio.sleep(0)
+            frame = np.zeros((settings.VIDEO_WIDTH, settings.VIDEO_HEIGHT, 3), np.uint8)
+            cv2.putText(frame, "Camera Error", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        else:
+            frame = process(frame)
+
+        if settings.RECORD_VIDEO:
+            settings.out_video.write(frame)
+        cv2.imshow(settings.WINDOW_NAME, frame)
+
+        if settings.stream_is_run and (not settings.frame_queue.full()):
+            await settings.frame_queue.put(frame)
+        await asyncio.sleep(0.001)
         if key == ord('q'):
             break
 
+    settings.door_opened = False
+    settings.system_status = SystemStatus.STOPPING
     settings.stream_is_run = False
     settings.frame_queue.task_done()
+    await asyncio.sleep(3)
+
+    print("Can releasing...")
     cap.release()
     cv2.destroyAllWindows()
-    close_door()
+    print("Stoping recording...")
     if settings.RECORD_VIDEO:
         settings.out_video.release()
+    print("All stopped...")
 
 async def main():
 
     ff_task = asyncio.create_task(streaming.start_ffmpeg_writer())
     main_task = asyncio.create_task(start_system())
+    kotlin_connection_task = asyncio.create_task(kotlin_connection.send_data_loop())
     try:
-        await asyncio.gather(main_task, ff_task)
+        await asyncio.gather(main_task, ff_task, kotlin_connection_task)
     except asyncio.CancelledError:
         pass
 

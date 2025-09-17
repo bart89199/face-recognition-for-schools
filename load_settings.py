@@ -1,6 +1,5 @@
 import json
 
-import door
 import settings
 
 settings_file_path = "/home/danil/testweb/settings.json"
@@ -23,7 +22,6 @@ def load():
             settings.FRAMES_FOR_EYES_CHECK = new_settings['frames_for_eyes_check']
             settings.WAIT_FRAMES_FOR_DETECTION = new_settings['wait_frames_for_detection']
             settings.CAM_PORT = new_settings['cam_port']
-            door.ARDUINO_PORT = new_settings['arduino_port']
             settings.MAX_FACES = new_settings['max_faces']
             settings.FACE_DETECTION_MODE = new_settings['face_detection_mode']
             settings.MAX_AVG_DISTANCE = new_settings['max_avg_distance']

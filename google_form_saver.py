@@ -13,6 +13,7 @@ import settings
 from frame_handler import read_frame_file
 from loader import load_googleapi, load_known_data, load_mediapipe, load_main
 from saver import save_from_frame, save_data_on_disk, forget_face
+from settings import SystemStatus
 
 
 def export_file(file_id):
@@ -82,6 +83,8 @@ def load_data_from_forms():
     result = get_forms_answers()
 
     for response in result['responses']:
+        if settings.SystemStatus == SystemStatus.STOPPING:
+            break
         load_response(response)
     print("Forms checked.")
     cur_time = time.time()

@@ -15,7 +15,7 @@ from httplib2 import ServerNotFoundError
 
 import settings
 from frame_handler import get_rgb_frame, read_frame_file
-from loader import load_known_data, load_googleapi, load_mediapipe, load_stuff
+from loader import load_known_data, load_googleapi, load_mediapipe
 from face_recogition_logic import get_locations_and_eyes
 
 
@@ -183,7 +183,6 @@ def autosave():
 
 def main_saver():
     from google_form_saver import get_forms_answers, forget_forms_response, load_data_from_forms, load_response
-    load_stuff()
     load_known_data()
     load_mediapipe()
     load_googleapi()

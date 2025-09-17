@@ -1,0 +1,9 @@
+/.idea
+/.venv
+/tmp
+/saved_faces
+/known_faces.pkl
+/saved_form_answers.json
+/token.json
+/credentials.json
+/blocked_google_files.json

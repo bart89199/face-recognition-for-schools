@@ -142,6 +142,8 @@ async def start_system():
                 if key == ord('q'):
                     break
                 await asyncio.sleep(0.1)
+            if key == ord('q'):
+                break
             loader.setup_cap()
         else:
             frame = process(frame)

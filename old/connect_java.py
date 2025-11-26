@@ -143,7 +143,7 @@ def get_rgb_frame(frame: np.ndarray):
 
 test_bytes = bytearray([1, 10, 100, 254, 255])
 test_ints = array('i', [1, 10, 100, 12345678, 123456789])
-test_frame = cv2.imread("test-img.png")
+test_frame = cv2.imread("../test-img.png")
 
 def test_java_connection():
     start_time = time.time()

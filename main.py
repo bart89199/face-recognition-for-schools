@@ -3,6 +3,7 @@ import os.path
 import threading
 import time
 from datetime import datetime
+from time import sleep
 
 import cv2
 import face_recognition
@@ -11,6 +12,7 @@ import numpy as np
 
 import kotlin_connection
 import load_settings
+import loader
 import settings
 import streaming
 from face_recogition_logic import recognition, process_ready_faces, \
@@ -103,8 +105,7 @@ async def start_system():
     load_known_data()
 
     print("Starting video")
-    cap = cv2.VideoCapture(settings.CAM_PORT)
-    cap.set(cv2.CAP_PROP_FPS, settings.VIDEO_FPS)
+    loader.setup_cap()
     print("Video started")
     cv2.namedWindow(settings.WINDOW_NAME, cv2.WINDOW_NORMAL)
 
@@ -112,8 +113,8 @@ async def start_system():
         name = f'{datetime.now().strftime("%Y.%m.%d %H:%M:%S")}.avi'
         os.makedirs(settings.VIDEOS_FOLDER, exist_ok=True)
         filepath = os.path.join(settings.VIDEOS_FOLDER, name)
-        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_width = int(settings.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        frame_height = int(settings.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         settings.out_video = cv2.VideoWriter(filepath, 0x44495658, settings.VIDEO_FPS, (frame_width, frame_height))
 
     await asyncio.sleep(3)
@@ -121,15 +122,27 @@ async def start_system():
     settings.system_status = SystemStatus.RUNNING
     while True:
         if time.time() - settings.last_settings_load >= 30.0:
+            prev_cam = settings.CAM_PORT
             load_settings.load()
+            if prev_cam != settings.CAM_PORT:
+                loader.setup_cap()
             settings.last_settings_load = time.time()
 
         key = cv2.waitKey(1)
-        ret, frame = cap.read()
+        if key == ord('q'):
+            break
+        ret, frame = settings.cap.read()
         if not ret:
             print("Something went wrong with camera")
             frame = np.zeros((settings.VIDEO_WIDTH, settings.VIDEO_HEIGHT, 3), np.uint8)
             cv2.putText(frame, "Camera Error", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+            start_time = time.time()
+            while time.time() - start_time < 1:
+                key = cv2.waitKey(1)
+                if key == ord('q'):
+                    break
+                await asyncio.sleep(0.1)
+            loader.setup_cap()
         else:
             frame = process(frame)
 
@@ -140,17 +153,20 @@ async def start_system():
         if settings.stream_is_run and (not settings.frame_queue.full()):
             await settings.frame_queue.put(frame)
         await asyncio.sleep(0.001)
-        if key == ord('q'):
-            break
 
     settings.door_opened = False
     settings.system_status = SystemStatus.STOPPING
     settings.stream_is_run = False
-    settings.frame_queue.task_done()
+    await asyncio.sleep(1)
+    frame = np.zeros((settings.VIDEO_WIDTH, settings.VIDEO_HEIGHT, 3), np.uint8)
+    cv2.putText(frame, "System stopped", (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+    if settings.frame_queue.full():
+        settings.frame_queue.get_nowait()
+    await settings.frame_queue.put(frame)
     await asyncio.sleep(3)
 
     print("Can releasing...")
-    cap.release()
+    settings.cap.release()
     cv2.destroyAllWindows()
     print("Stoping recording...")
     if settings.RECORD_VIDEO:

@@ -47,4 +47,4 @@ async def send_data_loop():
         else:
             await asyncio.sleep(0.2)
     send_data(False, [], SystemStatus.STOPPING.name)
-    print("Kotlin connection stoped")
+    print("Kotlin connection stopped")

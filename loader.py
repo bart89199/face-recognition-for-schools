@@ -2,6 +2,7 @@ import json
 import os
 import pickle
 
+import cv2
 import serial
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -75,6 +76,9 @@ def load_known_data():
         with open(settings.BLOCKED_GOOGLE_FILES_FILE, "r") as f:
             settings.blocked_google_files = json.load(f)
 
+def setup_cap():
+    settings.cap = cv2.VideoCapture(settings.CAM_PORT)
+    settings.cap.set(cv2.CAP_PROP_FPS, settings.VIDEO_FPS)
 
 def load_main():
     register_heif_opener()

@@ -105,6 +105,7 @@ face_image_detector = None
 landmarker_image = None
 landmarker = None
 out_video = None
+cap = None
 
 stream_is_run = False
 

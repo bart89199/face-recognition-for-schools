@@ -66,6 +66,8 @@ async def start_ffmpeg_writer():
     finally:
         print("Hls stopped")
         proc.stdin.close()
+        if os.path.exists(settings.HLS_DIR):
+            shutil.rmtree(settings.HLS_DIR)
         await proc.wait()
 
 

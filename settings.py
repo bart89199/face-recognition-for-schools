@@ -55,8 +55,8 @@ RECORD_VIDEO = True
 
 HLS_DIR = '/home/danil/testweb/hls'
 PLAYLIST = 'stream.m3u8'
-VIDEO_HEIGHT = 480
-VIDEO_WIDTH = 640
+VIDEO_HEIGHT = 720
+VIDEO_WIDTH = 1280
 VIDEO_FPS = 30
 
 frame_queue = asyncio.Queue(10)

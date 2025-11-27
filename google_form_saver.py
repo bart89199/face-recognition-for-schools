@@ -90,6 +90,8 @@ def load_data_from_forms():
         print("Forms checked.")
     except ServerNotFoundError as e:
         print("No internet")
+    except TimeoutError:
+        print("Timeout")
 
 
     cur_time = time.time()

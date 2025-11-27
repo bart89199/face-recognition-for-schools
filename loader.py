@@ -78,7 +78,10 @@ def load_known_data():
 
 def setup_cap():
     settings.cap = cv2.VideoCapture(settings.CAM_PORT)
+    settings.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
     settings.cap.set(cv2.CAP_PROP_FPS, settings.VIDEO_FPS)
+    settings.cap.set(cv2.CAP_PROP_FRAME_WIDTH, settings.VIDEO_WIDTH)
+    settings.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, settings.VIDEO_HEIGHT)
 
 def load_main():
     register_heif_opener()

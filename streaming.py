@@ -24,7 +24,7 @@ FFMPEG_CMD = [
     '-profile:v', 'baseline',
     '-pix_fmt', 'yuv420p',
     '-f', 'hls',
-    '-hls_time', '1',  # длительность сегмента (сек) -> влияет на задержку
+    '-hls_time', '2',  # длительность сегмента (сек) -> влияет на задержку
     '-hls_list_size', '60',
     '-hls_flags', 'delete_segments',
     os.path.join(settings.HLS_DIR, settings.PLAYLIST)

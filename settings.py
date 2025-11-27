@@ -121,7 +121,7 @@ blocked_google_files = []
 eyes = [{}] * LAST_FRAMES_AMOUNT
 recognition_count = {}
 
-KTOR_STATUS_URL = "http://0.0.0.0/api/py/status"
+KTOR_STATUS_URL = "http://0.0.0.0:80/api/py/status"
 
 last_blink_time = 0
 last_forms_check_time = 0

@@ -6,6 +6,7 @@ import cv2
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseDownload
+from httplib2 import ServerNotFoundError
 from matplotlib.image import imread
 
 import frame_handler
@@ -80,13 +81,17 @@ def load_response(response, skip_if_contains = True, save_format = '0'):
 def load_data_from_forms():
     print("Checking forms...")
 
-    result = get_forms_answers()
+    try:
+        result = get_forms_answers()
+        for response in result['responses']:
+            if settings.SystemStatus == SystemStatus.STOPPING:
+                break
+            load_response(response)
+        print("Forms checked.")
+    except ServerNotFoundError as e:
+        print("No internet")
 
-    for response in result['responses']:
-        if settings.SystemStatus == SystemStatus.STOPPING:
-            break
-        load_response(response)
-    print("Forms checked.")
+
     cur_time = time.time()
     settings.last_forms_check_time = cur_time
 
